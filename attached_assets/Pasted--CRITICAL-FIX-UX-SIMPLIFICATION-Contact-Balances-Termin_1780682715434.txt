@@ -1,0 +1,47 @@
+# CRITICAL FIX & UX SIMPLIFICATION: Contact Balances, Terminology, and Global Sync
+
+The current accounting terminology (Debit/Credit) is confusing for the end-users, and the balance aggregation logic is globally broken. Please implement the following fixes in this EXACT order:
+
+## STEP 1: UI Terminology & Color Coding (Layman Terms)
+Replace all accounting jargon with simple terms across the Contact Profile and Account Statement (كشف الحساب):
+- **Change "مدين" (Debit) to "عليه" (He Owes Us).** 
+  - **Color:** Force the text and values in this column/metric to be RED (`text-red-600`).
+- **Change "دائن" (Credit) to "له" (We Owe Him).** 
+  - **Color:** Force the text and values in this column/metric to be GREEN (`text-green-600`).
+- **Absolute Values:** The values inside the "عليه" and "له" columns MUST be strictly positive (use `Math.abs()` or SQL `ABS()`). Do NOT display negative numbers in these columns.
+
+## STEP 2: Fix the Math in the Contact Profile (Source of Truth)
+Before fixing the rest of the app, ensure the calculations are 100% correct on the Contact Profile page:
+- **Running Balance:** `Current Balance = Previous Balance + [عليه] - [له]`. 
+- **Aggregations:** Fix the backend query/RPC to correctly separate Sales from Purchases. The metrics should be:
+  - Total Unpaid Sales (إجمالي المبيعات غير المدفوعة) -> sum of sales invoices due.
+  - Total Unpaid Purchases (إجمالي المشتريات غير المدفوعة) -> sum of purchase invoices due.
+  - **Net Balance (الرصيد المستحق):** If the final number means he owes us, show it in RED with "عليه". If we owe him, show it in GREEN with "له".
+
+## STEP 3: Global Propagation (System-Wide Sync)
+Once the exact `Net Balance` is fixed and working on the Contact Profile, you MUST use this exact same logic/hook to display the contact's balance in the following pages:
+1. **Cashier / POS (الكاشير):** When selecting a contact.
+2. **Add Sales Invoice (إضافة فاتورة مبيعات).**
+3. **Add Purchase Invoice (إضافة فاتورة مشتريات).**
+4. **Standalone Returns (المرتجع الحر).**
+
+Do not use separate or legacy queries for these pages. They must all read from the newly fixed unified balance logic to guarantee zero discrepancies.
+## STEP 4: Preventative Checks & Edge Cases (Zero-Bug Policy)
+To ensure this architectural shift doesn't break other modules, thoroughly verify and fix the following potential side-effects:
+
+1. **Backend Math vs. Frontend Display (CRITICAL):**
+   - Apply `Math.abs()` ONLY at the Frontend/UI presentation layer. 
+   - The Backend SQL, RPCs, and API responses MUST retain their strict mathematical integrity (proper positive/negative signs based on standard debit/credit rules) so that running balances and background aggregations do not break.
+
+2. **Settlement & Payment Modals (تسويات الدفع):** 
+   - When a user opens the "Receive Payment" (سند قبض) or "Issue Payment" (سند صرف) modals, the validation for "Maximum amount to pay/receive" MUST be evaluated against the new unified `Net Balance`.
+
+3. **Credit Limit Validations (الحد الائتماني):** 
+   - Any validation in the POS (Cashier) or Sales Invoice creation that blocks a "Credit Sale" (بيع آجل) based on a customer's max credit limit must now strictly evaluate against the new unified `Net Balance`.
+
+4. **Financial Reports (التقارير المالية):** 
+   - Update the "Contact Balances Report" (تقرير أرصدة العملاء والموردين) and any aging reports to strictly use the new unified logic. 
+   - Remove any legacy hardcoded filters like `WHERE type = 'customer'` that might cause contacts of type `both` to disappear from reports.
+
+5. **Automated Journal Entries (القيود المحاسبية التلقائية):** 
+   - Ensure that the database triggers linking Invoices/Payments to the General Ledger (Chart of Accounts) still function correctly. The system must accurately route to Accounts Receivable (AR) or Accounts Payable (AP) without crashing if a contact is acting as both simultaneously.

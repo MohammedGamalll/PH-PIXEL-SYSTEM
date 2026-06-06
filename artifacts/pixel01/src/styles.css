@@ -1,0 +1,666 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800&display=swap');
+
+@custom-variant dark (&:is(.dark *));
+
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-glow: var(--primary-glow);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --font-sans: 'Cairo', 'Inter', system-ui, sans-serif;
+}
+
+:root {
+  --radius: 0.75rem;
+
+  /* HSL fallbacks for legacy browsers (Windows 7 / Chrome <111 do not support oklch) */
+  --background: hsl(220 25% 99%);
+  --foreground: hsl(230 45% 8%);
+
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(230 45% 8%);
+
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(230 45% 8%);
+
+  /* Electric blue brand */
+  --primary: hsl(230 85% 48%);
+  --primary-foreground: hsl(220 25% 99%);
+  --primary-glow: hsl(220 85% 62%);
+
+  --secondary: hsl(220 25% 94%);
+  --secondary-foreground: hsl(230 45% 12%);
+
+  --muted: hsl(220 20% 94%);
+  --muted-foreground: hsl(230 25% 25%);
+
+  --accent: hsl(225 55% 90%);
+  --accent-foreground: hsl(230 70% 18%);
+
+  --destructive: hsl(0 80% 45%);
+  --destructive-foreground: hsl(0 0% 99%);
+
+  --success: hsl(150 70% 35%);
+  --success-foreground: hsl(0 0% 99%);
+
+  --border: hsl(220 22% 80%);
+  --input: hsl(220 22% 86%);
+  --ring: hsl(230 85% 48%);
+
+
+  --gradient-primary: linear-gradient(135deg, hsl(230 75% 55%), hsl(220 80% 70%));
+  --gradient-hero: linear-gradient(135deg, hsl(230 75% 55%) 0%, hsl(260 65% 60%) 50%, hsl(220 80% 70%) 100%);
+  --gradient-soft: linear-gradient(180deg, hsl(220 25% 99%) 0%, hsl(220 40% 96%) 100%);
+
+  --shadow-soft: 0 4px 20px -4px hsla(230, 75%, 55%, 0.12);
+  --shadow-elegant: 0 20px 60px -20px hsla(230, 75%, 55%, 0.25);
+  --shadow-glow: 0 0 40px hsla(220, 80%, 70%, 0.4);
+
+  --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Permissions matrix — group sub-headers */
+  --group-sales-bg: hsl(214 95% 96%);
+  --group-sales-fg: hsl(224 76% 28%);
+  --group-sales-border: hsl(214 90% 88%);
+  --group-purchases-bg: hsl(40 95% 95%);
+  --group-purchases-fg: hsl(28 75% 28%);
+  --group-purchases-border: hsl(38 90% 84%);
+  --group-inventory-bg: hsl(150 70% 94%);
+  --group-inventory-fg: hsl(155 65% 22%);
+  --group-inventory-border: hsl(150 60% 82%);
+  --group-accounting-bg: hsl(270 70% 96%);
+  --group-accounting-fg: hsl(265 55% 30%);
+  --group-accounting-border: hsl(270 55% 88%);
+  --group-settings-bg: hsl(220 20% 94%);
+  --group-settings-fg: hsl(220 25% 18%);
+  --group-settings-border: hsl(220 18% 84%);
+  --special-row-bg: hsl(214 95% 96% / 0.45);
+  --badge-warning-bg: hsl(40 95% 92%);
+  --badge-warning-fg: hsl(28 78% 28%);
+  --badge-warning-border: hsl(38 90% 78%);
+  --badge-info-dot: hsl(220 85% 55%);
+}
+
+.dark {
+  --background: hsl(230 30% 10%);
+  --foreground: hsl(220 30% 99%);
+
+  --card: hsl(232 30% 14%);
+  --card-foreground: hsl(220 30% 99%);
+
+  --popover: hsl(232 30% 14%);
+  --popover-foreground: hsl(220 30% 99%);
+
+  --primary: hsl(225 90% 75%);
+  --primary-foreground: hsl(230 30% 10%);
+  --primary-glow: hsl(220 90% 80%);
+
+  --secondary: hsl(232 25% 20%);
+  --secondary-foreground: hsl(220 30% 99%);
+
+  --muted: hsl(232 20% 20%);
+  --muted-foreground: hsl(230 20% 82%);
+
+  --accent: hsl(235 40% 24%);
+  --accent-foreground: hsl(220 30% 99%);
+
+  --destructive: hsl(0 80% 65%);
+  --destructive-foreground: hsl(0 0% 99%);
+
+  --success: hsl(150 65% 60%);
+  --success-foreground: hsl(230 30% 10%);
+
+  --border: hsla(0, 0%, 100%, 0.18);
+  --input: hsla(0, 0%, 100%, 0.2);
+  --ring: hsl(225 90% 75%);
+
+  /* Permissions matrix — dark tuning */
+  --group-sales-bg: hsl(224 60% 22%);
+  --group-sales-fg: hsl(214 90% 88%);
+  --group-sales-border: hsl(224 50% 32%);
+  --group-purchases-bg: hsl(28 55% 22%);
+  --group-purchases-fg: hsl(40 90% 84%);
+  --group-purchases-border: hsl(28 50% 32%);
+  --group-inventory-bg: hsl(155 50% 18%);
+  --group-inventory-fg: hsl(150 70% 82%);
+  --group-inventory-border: hsl(155 45% 28%);
+  --group-accounting-bg: hsl(265 45% 22%);
+  --group-accounting-fg: hsl(270 70% 88%);
+  --group-accounting-border: hsl(265 40% 32%);
+  --group-settings-bg: hsl(220 20% 20%);
+  --group-settings-fg: hsl(220 25% 90%);
+  --group-settings-border: hsl(220 18% 32%);
+  --special-row-bg: hsl(224 50% 24% / 0.4);
+  --badge-warning-bg: hsl(28 50% 22%);
+  --badge-warning-fg: hsl(40 90% 82%);
+  --badge-warning-border: hsl(28 45% 32%);
+  --badge-info-dot: hsl(220 85% 70%);
+}
+
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    font-family: var(--font-sans);
+    font-size: 18px;
+  }
+
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Barcode label print: only nodes inside .print-area appear on paper. */
+  @media print {
+    body * { visibility: hidden !important; }
+    .print-area, .print-area * { visibility: visible !important; }
+    .print-area {
+      position: absolute !important;
+      left: 0 !important;
+      right: 0 !important;
+      top: 0 !important;
+      width: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      background: #ffffff !important;
+    }
+    /* Sticker sheet: tile labels across the page (auto-fill horizontally then wrap) */
+    .print-area--stickers {
+      width: 100% !important;
+      display: grid !important;
+      grid-template-columns: repeat(auto-fill, 50mm) !important;
+      grid-auto-rows: 25mm !important;
+      grid-auto-flow: row !important;
+      justify-content: start !important;
+      gap: 0 !important;
+    }
+    .print-label {
+      width: 50mm !important;
+      height: 25mm !important;
+      box-sizing: border-box !important;
+      padding: 1mm 1.5mm !important;
+      margin: 0 !important;
+      background: #ffffff !important;
+      color: #000000 !important;
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+      overflow: hidden !important;
+    }
+
+    /* When NOT inside a sticker sheet, fall back to single-label-per-page */
+    .print-area:not(.print-area--stickers) .print-label {
+      page-break-after: always !important;
+      break-after: page !important;
+    }
+    .print-area:not(.print-area--stickers) .print-label:last-child {
+      page-break-after: auto !important;
+      break-after: auto !important;
+    }
+    @page { size: A4; margin: 5mm; }
+
+  }
+
+  /* Product Details printout - kept off-screen so layout exists for print */
+  .print-area--details {
+    position: absolute;
+    left: -10000px;
+    top: 0;
+    width: 190mm;
+    background: #ffffff;
+    color: #000;
+    direction: rtl;
+    font-family: 'Cairo', system-ui, sans-serif;
+    padding: 0;
+  }
+  .print-area--details .pd-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-bottom: 2px solid #000;
+    padding-bottom: 6pt;
+    margin-bottom: 10pt;
+  }
+  .print-area--details .pd-header h1 { font-size: 18pt; margin: 0; }
+  .print-area--details .pd-store { font-size: 14pt; font-weight: 700; }
+  .print-area--details h2 {
+    font-size: 12pt;
+    margin: 10pt 0 4pt 0;
+    border-bottom: 1px solid #333;
+  }
+  .print-area--details .pd-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 6pt;
+    font-size: 10pt;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .print-area--details .pd-table th,
+  .print-area--details .pd-table td {
+    border: 1px solid #333;
+    padding: 5pt 7pt;
+    text-align: right;
+  }
+  .print-area--details .pd-table th { background: #e5e7eb; font-weight: 700; }
+  .print-area--details .pd-footer {
+    margin-top: 10pt;
+    display: flex;
+    justify-content: space-between;
+    font-size: 9pt;
+    border-top: 1px solid #333;
+    padding-top: 4pt;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  @media print {
+    .print-area--details {
+      position: absolute !important;
+      left: 0 !important;
+      top: 0 !important;
+      width: 100% !important;
+      padding: 0 !important;
+    }
+  }
+
+  /* Sales invoice / packaging / delivery print containers.
+     Kept off-screen instead of display:none so layout exists for print. */
+  .print-area--invoice,
+  .print-area--packaging,
+  .print-area--delivery {
+    position: absolute;
+    left: -10000px;
+    top: 0;
+    width: 210mm;
+    background: #ffffff;
+    color: #000;
+    direction: rtl;
+    font-family: 'Cairo', system-ui, sans-serif;
+    padding: 10mm;
+  }
+  @media print {
+    .print-area--invoice,
+    .print-area--packaging,
+    .print-area--delivery {
+      position: absolute !important;
+      left: 0 !important;
+      top: 0 !important;
+      width: 100% !important;
+      padding: 0 !important;
+    }
+    @page { size: A4 portrait; margin: 10mm; }
+  }
+  .sales-print-table { width: 100%; border-collapse: collapse; margin-top: 10pt; font-size: 11pt; }
+  .sales-print-table th, .sales-print-table td {
+    border: 1px solid #333; padding: 6pt 8pt; text-align: right;
+  }
+  .sales-print-table th { background: #f1f5f9; font-weight: 700; }
+  .sales-print-header { display:flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8pt; }
+  .sales-print-title { font-size: 18pt; font-weight: 800; margin: 6pt 0; }
+  .sales-print-meta { display:flex; justify-content: space-between; margin: 8pt 0; font-size: 11pt; }
+  .sales-print-totals { margin-top: 10pt; display: grid; grid-template-columns: 1fr 1fr; gap: 4pt 12pt; font-size: 11pt; }
+  .sales-print-footer { margin-top: 30pt; display:flex; justify-content: space-between; font-size: 10pt; }
+
+  [dir="rtl"] {
+    font-family: 'Cairo', system-ui, sans-serif;
+  }
+
+  [dir="ltr"] {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+}
+
+@layer utilities {
+  .bg-gradient-primary {
+    background-image: var(--gradient-primary);
+  }
+  .bg-gradient-hero {
+    background-image: var(--gradient-hero);
+  }
+  .bg-gradient-soft {
+    background-image: var(--gradient-soft);
+  }
+  .shadow-soft {
+    box-shadow: var(--shadow-soft);
+  }
+  .shadow-elegant {
+    box-shadow: var(--shadow-elegant);
+  }
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+  .transition-smooth {
+    transition: var(--transition-smooth);
+  }
+  .pixel-grid {
+    background-image:
+      linear-gradient(hsla(230, 75%, 55%, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, hsla(230, 75%, 55%, 0.08) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+}
+
+/* A4 invoice receipt: rendered off-screen until print */
+.print-area--receipt {
+  position: absolute;
+  left: -10000px;
+  top: 0;
+  width: 190mm;
+  background: #fff;
+  color: #000;
+  direction: rtl;
+  font-family: 'Cairo', system-ui, sans-serif;
+  padding: 12mm;
+  font-size: 11pt;
+  line-height: 1.45;
+}
+.print-area--receipt table { width: 100%; border-collapse: collapse; }
+.print-area--receipt table th, .print-area--receipt table td { vertical-align: top; }
+@media print {
+  .no-print { display: none !important; }
+  body:has(.print-area--receipt) { height: auto !important; }
+  body:has(.print-area--receipt) html { height: auto !important; }
+  .print-area--receipt {
+    position: absolute !important;
+    left: 0 !important;
+    right: auto !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 12mm !important;
+    margin: 0 !important;
+  }
+  @page { size: A4; margin: 10mm; }
+}
+
+
+/* Cashier responsive layout */
+.cashier-main-grid {
+  grid-template-columns: 1fr;
+  min-width: 0;
+}
+.cashier-main-grid > * {
+  min-width: 0;
+}
+@media (min-width: 1024px) {
+  .cashier-main-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  }
+}
+
+/* Cashier — mobile optimizations (<=768px) */
+@media (max-width: 768px) {
+  .cashier-toolbar {
+    gap: 3px !important;
+    padding: 4px !important;
+    flex-wrap: wrap !important;
+  }
+  .cashier-toolbar > button {
+    flex: 0 0 auto;
+    min-width: 0;
+    font-size: 10px !important;
+    padding: 4px 6px !important;
+  }
+  .cashier-toolbar > div:last-child {
+    display: none !important;
+  }
+  .cashier-product-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    max-height: 45vh !important;
+  }
+  .cashier-product-grid > button {
+    min-height: 132px !important;
+    padding: 8px !important;
+    font-size: 12px !important;
+  }
+  .cashier-product-grid img,
+  .cashier-product-grid > button > div:first-child {
+    width: 40px !important;
+    height: 40px !important;
+  }
+  .cashier-cart-header {
+    grid-template-columns: 1fr !important;
+  }
+  .cashier-cart-table {
+    max-height: 35vh !important;
+  }
+  .cashier-actions {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 4px !important;
+  }
+  .cashier-actions > button {
+    font-size: 12px !important;
+    padding: 10px 4px !important;
+    min-height: 44px;
+  }
+  .cashier-modal {
+    max-width: 95vw !important;
+    width: 95vw !important;
+  }
+  .cashier-categories {
+    flex-wrap: wrap !important;
+    padding-bottom: 4px;
+  }
+  .cashier-categories > * {
+    flex-shrink: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .cashier-product-grid > button {
+    min-height: 124px !important;
+  }
+  .cashier-product-grid .price-previous {
+    display: none !important;
+  }
+}
+
+
+/* ============================================================
+ * Form input strong styling for add/edit forms
+ * Apply by wrapping a form/section with className="form-strong"
+ * ============================================================ */
+.form-strong input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.form-strong select,
+.form-strong textarea {
+  background-color: #f8fafc !important;
+  border: 1px solid #94a3b8 !important;
+  color: #0f172a !important;
+  font-weight: 700 !important;
+}
+.form-strong input:not([type="checkbox"]):not([type="radio"]):not([type="file"])::placeholder,
+.form-strong textarea::placeholder {
+  color: #64748b !important;
+  font-weight: 500 !important;
+}
+.form-strong input:focus,
+.form-strong select:focus,
+.form-strong textarea:focus {
+  background-color: #ffffff !important;
+  border-color: #2563eb !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+}
+.form-strong label {
+  color: #1e293b !important;
+  font-weight: 600 !important;
+}
+
+
+/* ============================================================
+ * Bold table data — applied across all data tables
+ * Also draws visible column dividers.
+ * ============================================================ */
+.data-table tbody td,
+table.bold-data tbody td,
+.print-table-area tbody td,
+.report-table tbody td,
+table.w-full tbody td {
+  font-weight: 700 !important;
+  border-right: 1px solid #e5e7eb;
+  border-left: 1px solid #e5e7eb;
+}
+.data-table thead th,
+table.bold-data thead th,
+.print-table-area thead th,
+.report-table thead th,
+table.w-full thead th {
+  font-weight: 800 !important;
+  border-right: 1px solid #e5e7eb;
+  border-left: 1px solid #e5e7eb;
+}
+
+/* ============================================================
+ * Win7-safe button variants — explicit colors, no color-mix().
+ * Used by src/components/ui/button.tsx
+ * ============================================================ */
+.btn-default {
+  background-color: hsl(230 85% 48%);
+  color: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.btn-default:hover { background-color: hsl(230 85% 40%); }
+
+.btn-destructive {
+  background-color: hsl(0 80% 45%);
+  color: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.btn-destructive:hover { background-color: hsl(0 80% 38%); }
+
+.btn-outline {
+  background-color: #ffffff;
+  color: hsl(230 45% 12%);
+  border: 1px solid hsl(220 22% 80%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+.btn-outline:hover {
+  background-color: hsl(225 55% 90%);
+  color: hsl(230 70% 18%);
+}
+
+.btn-secondary {
+  background-color: hsl(220 25% 94%);
+  color: hsl(230 45% 12%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+.btn-secondary:hover { background-color: hsl(220 25% 88%); }
+
+.btn-ghost { background-color: transparent; color: inherit; }
+.btn-ghost:hover {
+  background-color: hsl(225 55% 90%);
+  color: hsl(230 70% 18%);
+}
+
+.btn-link {
+  background-color: transparent;
+  color: hsl(230 85% 48%);
+  text-underline-offset: 4px;
+}
+.btn-link:hover { text-decoration: underline; }
+
+.dark .btn-default { background-color: hsl(225 90% 75%); color: hsl(230 30% 10%); }
+.dark .btn-default:hover { background-color: hsl(225 90% 68%); }
+.dark .btn-outline {
+  background-color: hsl(232 30% 14%);
+  color: hsl(220 30% 99%);
+  border-color: hsla(0, 0%, 100%, 0.2);
+}
+.dark .btn-outline:hover { background-color: hsl(235 40% 24%); }
+.dark .btn-secondary { background-color: hsl(232 25% 20%); color: hsl(220 30% 99%); }
+.dark .btn-secondary:hover { background-color: hsl(232 25% 26%); }
+.dark .btn-ghost:hover { background-color: hsl(235 40% 24%); }
+.dark .btn-link { color: hsl(225 90% 75%); }
+
+/* ============================================================
+ * Cashier error message — red text on light-red background.
+ * Win7-safe (no color-mix). Apply via className="cashier-error".
+ * ============================================================ */
+.cashier-error {
+  background-color: #fee2e2 !important;
+  color: #b91c1c !important;
+  border: 1px solid #fca5a5 !important;
+  padding: 8px 12px !important;
+  border-radius: 2px !important;
+  font-weight: 700 !important;
+  font-size: 13px !important;
+}
+
+
+/* Allow long product/customer names to wrap inside table cells */
+.print-table-area td {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* Cashier — keep header / totals visible, scroll only the items list */
+.cashier-cart-table {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow-y: auto;
+}
+@media (min-width: 1024px) {
+  .cashier-cart-table {
+    max-height: 400px;
+  }
+}
+.cashier-actions, .cashier-toolbar { flex-shrink: 0; }
+
+/* Cashier product cards — prevent text overlap on narrow widths */
+.cashier-product-card {
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .cashier-product-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .cashier-product-card .price-previous { display: none !important; }
+}
+
+/* Win7 / legacy compatibility: ensure dialog footer buttons stay visible */
+[role="dialog"] [class*="DialogFooter"],
+[role="dialog"] .dialog-footer {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  padding-top: 12px;
+  margin-top: 8px;
+  z-index: 1;
+}
+[role="dialog"] [class*="DialogFooter"] > * { margin-inline-start: 8px; margin-bottom: 4px; }
+
