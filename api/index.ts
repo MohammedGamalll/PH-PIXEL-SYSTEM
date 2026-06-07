@@ -3,12 +3,14 @@ import serverless from "serverless-http";
 
 type ServerlessHandler = ReturnType<typeof serverless>;
 
+const APP_MODULE = "../artifacts/api-server/dist/app.mjs";
+
 let cachedHandler: ServerlessHandler | null = null;
 
 async function getHandler(): Promise<ServerlessHandler> {
   if (cachedHandler) return cachedHandler;
-  const { default: app } = await import("../artifacts/api-server/dist/app.mjs");
-  cachedHandler = serverless(app);
+  const mod = (await import(APP_MODULE)) as { default: Parameters<typeof serverless>[0] };
+  cachedHandler = serverless(mod.default);
   return cachedHandler;
 }
 
