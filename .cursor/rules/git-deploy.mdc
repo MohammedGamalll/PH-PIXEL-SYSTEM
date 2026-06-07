@@ -1,0 +1,32 @@
+---
+description: Auto commit and push to GitHub main after code changes for Vercel production deploy
+alwaysApply: true
+---
+
+# Git Deploy Workflow
+
+Primary remote: `origin` → `https://github.com/MohammedGamalll/PH-PIXEL-SYSTEM.git` (branch `main`).
+
+Vercel production auto-deploys from `main` pushes to that repo.
+
+## After completing code changes
+
+When the user asks for implementation (not question-only or review-only tasks):
+
+1. Run `git status` and stage only relevant files — never commit `.env`, `.vercel/`, or `lib/db/scripts/.clone-dumps/`.
+2. Create a concise commit message focused on **why**.
+3. Push to `origin main` immediately after commit.
+4. If push fails with auth error, use `GITHUB_TOKEN` from `.env` (never print or commit the token):
+
+```powershell
+$token = (Get-Content .env | Where-Object { $_ -match '^GITHUB_TOKEN=' }) -replace '^GITHUB_TOKEN=',''
+git push "https://x-access-token:${token}@github.com/MohammedGamalll/PH-PIXEL-SYSTEM.git" main
+```
+
+5. Confirm Vercel deployment started (Git push triggers build on `ph-pixel-system-alpha.vercel.app`).
+
+## Do not
+
+- Push to `muabushama` remote unless explicitly requested.
+- Force push unless the user explicitly approves replacing remote history.
+- Commit secrets (`.env`, service role keys, DB passwords).
