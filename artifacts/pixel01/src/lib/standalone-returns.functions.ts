@@ -3,6 +3,29 @@ import { supabase } from "@/integrations/supabase/client";
 /** Prefix for contact_payment notes created by account standalone returns. */
 export const STANDALONE_RETURN_NOTE_PREFIX = "\u0645\u0631\u062A\u062C\u0639 \u062D\u0631";
 
+function isMissingColumnError(msg: string, column: string): boolean {
+  const m = (msg || "").toLowerCase();
+  const col = column.toLowerCase();
+  return (
+    (m.includes(col) && m.includes("schema cache"))
+    || (m.includes(`'${col}'`) && m.includes("could not find"))
+    || (m.includes(col) && m.includes("does not exist"))
+  );
+}
+
+/** Resolve open cashier session for current user when not passed explicitly. */
+async function resolveActiveSessionId(userId: string, explicit?: string | null): Promise<string | null> {
+  if (explicit) return explicit;
+  const { data } = await (supabase.from("cashier_sessions" as any) as any)
+    .select("id")
+    .eq("status", "open")
+    .eq("user_id", userId)
+    .order("opened_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data?.id as string | null) ?? null;
+}
+
 export const createStandaloneReturn = async ({ data }: {
   data: {
     return_type: "sales" | "purchase";
@@ -26,6 +49,10 @@ export const createStandaloneReturn = async ({ data }: {
   const { data: session } = await supabase.auth.getSession();
   const userId = session?.session?.user?.id;
   if (!userId) throw new Error("\u063A\u064A\u0631 \u0645\u0635\u0631\u062D");
+
+  const paymentMethod: "cash" | "account" =
+    data.payment_method === "account" && data.contact_id ? "account" : "cash";
+  const sessionId = await resolveActiveSessionId(userId, data.session_id);
 
   const { data: result, error } = await (supabase as any).rpc("process_standalone_return", {
     _return_type: data.return_type,
@@ -58,22 +85,30 @@ export const createStandaloneReturn = async ({ data }: {
     total_amount: number;
   };
 
-  // Link to cashier session via treasury transaction (standalone_returns.session_id may not exist).
-  if (data.session_id && ret.treasury_transaction_id) {
+  const metaPayload: Record<string, unknown> = {
+    payment_method: paymentMethod,
+    contact_id: paymentMethod === "account" ? data.contact_id : null,
+    contact_type: paymentMethod === "account" ? data.contact_type : null,
+  };
+  const { error: metaErr } = await (supabase as any)
+    .from("standalone_returns")
+    .update(metaPayload)
+    .eq("id", ret.id);
+  if (metaErr && !isMissingColumnError(metaErr.message || "", "payment_method")) {
+    console.warn("standalone_returns metadata update:", metaErr.message);
+  }
+
+  if (sessionId && ret.treasury_transaction_id) {
     const { error: trErr } = await (supabase as any)
       .from("treasury_transactions")
-      .update({ session_id: data.session_id })
+      .update({ session_id: sessionId })
       .eq("id", ret.treasury_transaction_id);
-    if (trErr) {
-      const msg = trErr.message || "";
-      const missingCol = msg.toLowerCase().includes("session_id") && msg.toLowerCase().includes("schema cache");
-      if (!missingCol) {
-        throw new Error("\u062A\u0645 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u0645\u0631\u062A\u062C\u0639 \u0644\u0643\u0646 \u0644\u0645 \u064A\u064F\u0631\u0628\u0637 \u0628\u0627\u0644\u062C\u0644\u0633\u0629: " + msg);
-      }
+    if (trErr && !isMissingColumnError(trErr.message || "", "session_id")) {
+      console.warn("treasury session link:", trErr.message);
     }
   }
 
-  if (data.contact_id && data.contact_type && data.payment_method === "account") {
+  if (data.contact_id && data.contact_type && paymentMethod === "account") {
     const direction = data.return_type === "sales" ? "in" : "out";
 
     let treasuryAccountId: string | null = null;
@@ -104,5 +139,5 @@ export const createStandaloneReturn = async ({ data }: {
     }
   }
 
-  return ret;
+  return { ...ret, session_id: sessionId };
 };

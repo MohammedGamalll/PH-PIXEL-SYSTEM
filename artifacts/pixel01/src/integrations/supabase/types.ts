@@ -2278,11 +2278,14 @@ export type Database = {
       }
       standalone_returns: {
         Row: {
+          contact_id: string | null
+          contact_type: string | null
           created_at: string
           created_by: string | null
           created_by_name_snapshot: string | null
           id: string
           owner_id: string
+          payment_method: string | null
           reason: string | null
           reference_no: string | null
           return_date: string
@@ -2294,11 +2297,14 @@ export type Database = {
           warehouse_id: string | null
         }
         Insert: {
+          contact_id?: string | null
+          contact_type?: string | null
           created_at?: string
           created_by?: string | null
           created_by_name_snapshot?: string | null
           id?: string
           owner_id: string
+          payment_method?: string | null
           reason?: string | null
           reference_no?: string | null
           return_date?: string
@@ -2310,11 +2316,14 @@ export type Database = {
           warehouse_id?: string | null
         }
         Update: {
+          contact_id?: string | null
+          contact_type?: string | null
           created_at?: string
           created_by?: string | null
           created_by_name_snapshot?: string | null
           id?: string
           owner_id?: string
+          payment_method?: string | null
           reason?: string | null
           reference_no?: string | null
           return_date?: string

@@ -14,7 +14,9 @@ import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { InvoiceDetailsModal } from "@/components/sales/InvoiceDetailsModal";
 import { PrintableInvoice, type PrintMode } from "@/components/sales/PrintableInvoice";
 import { useI18n } from "@/lib/i18n";
-import { fetchSessionStandaloneReturns } from "@/lib/cashier-session-data";
+import { useSessionStandaloneReturns } from "@/hooks/use-cashier-session";
+import { StandaloneReturnDetailsModal } from "@/components/returns/StandaloneReturnDetailsModal";
+import type { SessionStandaloneReturn } from "@/lib/cashier-session-data";
 
 export const Route = createFileRoute("/_authenticated/sales/cashier-log")({
   component: CashierLog,
@@ -26,6 +28,7 @@ const subCellBorder = { border: "1px solid #e5e7eb" } as const;
 function SessionInvoices({ sessionId, onView }: { sessionId: string; onView: (inv: any) => void }) {
   const { t, lang, dir } = useI18n();
   const { data: invoices = [], isLoading } = useInvoicesBySession(sessionId);
+  const [viewingStdReturn, setViewingStdReturn] = useState<SessionStandaloneReturn | null>(null);
   const { data: expenses = [] } = useQuery({
     queryKey: ["session-expenses", sessionId],
     queryFn: async () => {
@@ -35,10 +38,7 @@ function SessionInvoices({ sessionId, onView }: { sessionId: string; onView: (in
       return data ?? [];
     },
   });
-  const { data: stdReturns = [] } = useQuery({
-    queryKey: ["session-standalone-returns", sessionId],
-    queryFn: () => fetchSessionStandaloneReturns(sessionId),
-  });
+  const { data: stdReturns = [] } = useSessionStandaloneReturns(sessionId);
   if (isLoading) return <div className="p-3 text-xs text-gray-500">{t("sales.session.loading_invoices")}</div>;
   if (invoices.length === 0 && expenses.length === 0 && stdReturns.length === 0)
     return <div className="p-3 text-xs text-gray-500">{t("sales.session.no_invoices")}</div>;
@@ -138,25 +138,47 @@ function SessionInvoices({ sessionId, onView }: { sessionId: string; onView: (in
           <table className="w-full text-xs" style={{ borderCollapse: "collapse", backgroundColor: "#fff" }}>
             <thead style={{ backgroundColor: "#fef3c7" }}>
               <tr>
-                {["#", "المرجع", "النوع", "التاريخ", "المبلغ", "السبب"].map((h, idx) => (
+                {["#", "المرجع", "النوع", "التاريخ", "المبلغ", "الأصناف", "السبب", ""].map((h, idx) => (
                   <th key={idx} className="text-start p-2" style={subCellBorder}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {stdReturns.map((r: any, i: number) => (
+              {stdReturns.map((r, i) => (
                 <tr key={r.id}>
                   <td className="p-2" style={subCellBorder}>{i + 1}</td>
-                  <td className="p-2" style={subCellBorder}>{r.reference_no}</td>
+                  <td className="p-2" style={subCellBorder}>
+                    <button
+                      type="button"
+                      className="text-blue-600 hover:underline font-semibold"
+                      onClick={() => setViewingStdReturn(r)}
+                    >
+                      {r.reference_no}
+                    </button>
+                  </td>
                   <td className="p-2" style={subCellBorder}>{r.return_type === "sales" ? "مبيعات" : "مشتريات"}</td>
-                  <td className="p-2" style={subCellBorder}>{r.return_date ? new Date(r.return_date).toLocaleString(locale) : "—"}</td>
+                  <td className="p-2" style={subCellBorder}>{r.return_date || r.created_at ? new Date(String(r.return_date || r.created_at)).toLocaleString(locale) : "—"}</td>
                   <td className="p-2" style={subCellBorder}>{Number(r.total_amount || 0).toFixed(2)}</td>
+                  <td className="p-2" style={subCellBorder}>{r.items_summary || "—"}</td>
                   <td className="p-2" style={subCellBorder}>{r.reason || "—"}</td>
+                  <td className="p-2" style={subCellBorder}>
+                    <button type="button" className="text-blue-600 hover:underline" onClick={() => setViewingStdReturn(r)}>
+                      {t("sales.actions.view")}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {viewingStdReturn && (
+        <StandaloneReturnDetailsModal
+          returnId={viewingStdReturn.id}
+          preview={viewingStdReturn}
+          onClose={() => setViewingStdReturn(null)}
+        />
       )}
     </div>
   );

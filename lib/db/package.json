@@ -9,7 +9,13 @@
   },
   "scripts": {
     "push": "drizzle-kit push --config ./drizzle.config.ts",
-    "push-force": "drizzle-kit push --force --config ./drizzle.config.ts"
+    "push-force": "drizzle-kit push --force --config ./drizzle.config.ts",
+    "migrate:standalone-returns": "node scripts/run-session-standalone-returns-migration.mjs",
+    "migrate:standalone-returns:new": "node scripts/run-session-standalone-returns-migration.mjs --target=new",
+    "migrate:cloud": "node scripts/run-cloud-migration.mjs",
+    "clone:supabase": "node scripts/clone-supabase-project.mjs",
+    "sync:storage": "node scripts/sync-storage.mjs",
+    "verify:clone": "node scripts/verify-clone-counts.mjs"
   },
   "dependencies": {
     "drizzle-orm": "catalog:",

@@ -34,8 +34,10 @@ type Stat = {
   creditRefunds: number;
   multiRefunds: number;
   returnCount: number;
-  stdSalesRefund: number;
-  stdPurchaseDeposit: number;
+  totalSalesRefund: number;
+  totalPurchaseDeposit: number;
+  cashSalesRefund: number;
+  cashPurchaseDeposit: number;
   stdReturns: SessionStandaloneReturn[];
   items: { description: string; sku: string | null; brand: string | null; quantity: number; total: number }[];
   returnedItems: { description: string; sku: string | null; brand: string | null; quantity: number; total: number }[];
@@ -73,7 +75,7 @@ export function SessionDetailsModal({ sessionId, onClose }: Props) {
       const expSum = (exps ?? []).reduce((a: number, b: any) => a + Number(b.amount || 0), 0);
 
       const stdReturns = await fetchSessionStandaloneReturns(sessionId);
-      const { stdSalesRefund, stdPurchaseDeposit } = sumStandaloneReturns(stdReturns);
+      const sums = sumStandaloneReturns(stdReturns);
       const { customerPayments: custPay, supplierPayments: supPay } = await fetchSessionContactPayments(sessionId, stdReturns);
 
       const saleIds = sales.map((x) => x.id);
@@ -130,8 +132,10 @@ export function SessionDetailsModal({ sessionId, onClose }: Props) {
         creditRefunds: refundBy("credit"),
         multiRefunds: refundBy("multi"),
         returnCount: returns.length,
-        stdSalesRefund,
-        stdPurchaseDeposit,
+        totalSalesRefund: sums.totalSalesRefund,
+        totalPurchaseDeposit: sums.totalPurchaseDeposit,
+        cashSalesRefund: sums.cashSalesRefund,
+        cashPurchaseDeposit: sums.cashPurchaseDeposit,
         stdReturns,
         items,
         returnedItems,
@@ -146,7 +150,7 @@ export function SessionDetailsModal({ sessionId, onClose }: Props) {
             cashSales: 0, cardSales: 0, creditSales: 0, multiSales: 0, bankSales: 0,
             invoiceCount: 0, expenses: 0, customerPayments: 0, supplierPayments: 0,
             cashRefunds: 0, cardRefunds: 0, bankRefunds: 0, creditRefunds: 0, multiRefunds: 0,
-            returnCount: 0, stdSalesRefund: 0, stdPurchaseDeposit: 0, stdReturns: [],
+            returnCount: 0, totalSalesRefund: 0, totalPurchaseDeposit: 0, cashSalesRefund: 0, cashPurchaseDeposit: 0, stdReturns: [],
             items: [], returnedItems: [],
           });
         }
@@ -160,11 +164,11 @@ export function SessionDetailsModal({ sessionId, onClose }: Props) {
       (stat?.openingCash ?? 0) +
       (stat?.cashSales ?? 0) +
       (stat?.customerPayments ?? 0) +
-      (stat?.stdPurchaseDeposit ?? 0) -
+      (stat?.cashPurchaseDeposit ?? 0) -
       (stat?.expenses ?? 0) -
       (stat?.supplierPayments ?? 0) -
       (stat?.cashRefunds ?? 0) -
-      (stat?.stdSalesRefund ?? 0),
+      (stat?.cashSalesRefund ?? 0),
     [stat],
   );
   const totalShift = (stat?.cashSales ?? 0) + (stat?.cardSales ?? 0) + (stat?.creditSales ?? 0) + (stat?.multiSales ?? 0) + (stat?.bankSales ?? 0);
@@ -269,6 +273,12 @@ export function SessionDetailsModal({ sessionId, onClose }: Props) {
               )}
               {totalRefunds > 0 && (
                 <RowHL bg="#bee3f8" label="صافي المبيعات بعد المرتجعات:" value={fmt(netSales)} />
+              )}
+              {stat.cashSalesRefund > 0 && (
+                <RowHL bg="#fef3c7" label="مرتجعات حرة نقدية (مبيعات):" value={`-${fmt(stat.cashSalesRefund)}`} />
+              )}
+              {stat.cashPurchaseDeposit > 0 && (
+                <RowHL bg="#ecfdf5" label="مرتجعات حرة نقدية (مشتريات):" value={`+${fmt(stat.cashPurchaseDeposit)}`} />
               )}
               <RowHL bg="#d1fae5" label="المبلغ الإجمالي (متوقع في الدرج):" value={fmt(expectedDrawer)} />
               <RowHL bg="#d1fae5" label="المبيعات الآجلة:" value={fmt(stat.creditSales)} />
@@ -383,29 +393,38 @@ export function SessionDetailsModal({ sessionId, onClose }: Props) {
           </Section>
 
           {stat.stdReturns.length > 0 && (
-            <Section title={`\u0645\u0631\u062A\u062C\u0639\u0627\u062A \u062D\u0631\u0629 (${stat.stdReturns.length})`}>
+            <Section title={`مرتجعات حرة (${stat.stdReturns.length})`}>
               <table style={tbl}>
                 <thead>
                   <tr>
                     <th style={thStyle}>#</th>
-                    <th style={thStyle}>{"\u0627\u0644\u0645\u0631\u062C\u0639"}</th>
-                    <th style={thStyle}>{"\u0627\u0644\u0646\u0648\u0639"}</th>
-                    <th style={thStyle}>{"\u0627\u0644\u062A\u0627\u0631\u064A\u062E"}</th>
-                    <th style={thStyle}>{"\u0627\u0644\u0645\u0628\u0644\u063A"}</th>
-                    <th style={thStyle}>{"\u0627\u0644\u0633\u0628\u0628"}</th>
+                    <th style={thStyle}>المرجع</th>
+                    <th style={thStyle}>النوع</th>
+                    <th style={thStyle}>السداد</th>
+                    <th style={thStyle}>التاريخ</th>
+                    <th style={thStyle}>المبلغ</th>
+                    <th style={thStyle}>الأصناف</th>
+                    <th style={thStyle}>السبب</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {stat.stdReturns.map((r, i) => (
-                    <tr key={r.id} style={{ background: "#fffbeb" }}>
+                  {stat.stdReturns.map((r, i) => {
+                    const isPurchase = r.return_type === "purchase";
+                    return (
+                    <tr key={r.id} style={{ background: isPurchase ? "#ecfdf5" : "#fffbeb" }}>
                       <td style={tdStyle}>{i + 1}</td>
-                      <td style={tdStyle}>{r.reference_no || "\u2014"}</td>
-                      <td style={tdStyle}>{r.return_type === "sales" ? "\u0645\u0628\u064A\u0639\u0627\u062A" : "\u0645\u0634\u062A\u0631\u064A\u0627\u062A"}</td>
-                      <td style={tdStyle}>{r.return_date || r.created_at ? new Date(r.return_date || r.created_at!).toLocaleString("ar-EG") : "\u2014"}</td>
-                      <td style={{ ...tdStyle, color: "#b45309", fontWeight: 700 }}>-{fmt(r.total_amount)} {"\u062C.\u0645"}</td>
-                      <td style={tdStyle}>{r.reason || "\u2014"}</td>
+                      <td style={tdStyle}>{r.reference_no || "—"}</td>
+                      <td style={tdStyle}>{isPurchase ? "مشتريات" : "مبيعات"}</td>
+                      <td style={tdStyle}>{r.payment_method === "account" ? "على حساب" : "نقدي"}</td>
+                      <td style={tdStyle}>{r.return_date || r.created_at ? new Date(r.return_date || r.created_at!).toLocaleString("ar-EG") : "—"}</td>
+                      <td style={{ ...tdStyle, color: isPurchase ? "#15803d" : "#b45309", fontWeight: 700 }}>
+                        {isPurchase ? "+" : "-"}{fmt(r.total_amount)} ج.م
+                      </td>
+                      <td style={tdStyle}>{r.items_summary || "—"}</td>
+                      <td style={tdStyle}>{r.reason || "—"}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </Section>
@@ -432,13 +451,19 @@ export function SessionDetailsModal({ sessionId, onClose }: Props) {
                 <CalcRow label="رصيد افتتاحي" value={fmt(stat.openingCash)} sign="+" />
                 <CalcRow label="مبيعات نقدية" value={fmt(stat.cashSales)} sign="+" />
                 <CalcRow label="تحصيلات عملاء" value={fmt(stat.customerPayments)} sign="+" />
-                {stat.stdPurchaseDeposit > 0 && <CalcRow label="مقبوضات مرتجع مشتريات (حر)" value={fmt(stat.stdPurchaseDeposit)} sign="+" />}
+                {stat.cashPurchaseDeposit > 0 && <CalcRow label="مقبوضات مرتجع مشتريات حر (نقد)" value={fmt(stat.cashPurchaseDeposit)} sign="+" />}
                 <CalcRow label="مصاريف نقدية" value={fmt(stat.expenses)} sign="-" />
                 <CalcRow label="مدفوعات موردين" value={fmt(stat.supplierPayments)} sign="-" />
                 {stat.cashRefunds > 0 && (
                   <CalcRow label="مرتجعات نقدية (فواتير بيع)" value={fmt(stat.cashRefunds)} sign="-" />
                 )}
-                {stat.stdSalesRefund > 0 && <CalcRow label="مدفوعات مرتجع مبيعات (حر)" value={fmt(stat.stdSalesRefund)} sign="-" />}
+                {stat.cashSalesRefund > 0 && <CalcRow label="مرتجعات مبيعات حرة (نقد)" value={fmt(stat.cashSalesRefund)} sign="-" />}
+                {stat.totalSalesRefund > stat.cashSalesRefund && (
+                  <CalcRow label="مرتجعات مبيعات حرة (على حساب — لا تؤثر على الدرج)" value={fmt(stat.totalSalesRefund - stat.cashSalesRefund)} sign="~" />
+                )}
+                {stat.totalPurchaseDeposit > stat.cashPurchaseDeposit && (
+                  <CalcRow label="مرتجعات مشتريات حرة (على حساب — لا تؤثر على الدرج)" value={fmt(stat.totalPurchaseDeposit - stat.cashPurchaseDeposit)} sign="~" />
+                )}
                 <tr style={{ background: "#d1fae5", fontWeight: 800, fontSize: 14 }}>
                   <td style={tdStyle}>= المتوقع في الدرج</td>
                   <td style={{ ...tdStyle, textAlign: "left" }}>{fmt(expectedDrawer)} ج.م</td>
@@ -517,8 +542,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     </div>
   );
 }
-function CalcRow({ label, value, sign }: { label: string; value: string; sign: "+" | "-" }) {
-  const color = sign === "+" ? "#16a34a" : "#dc2626";
+function CalcRow({ label, value, sign }: { label: string; value: string; sign: "+" | "-" | "~" }) {
+  const color = sign === "+" ? "#16a34a" : sign === "-" ? "#dc2626" : "#6b7280";
   return (
     <tr>
       <td style={{ ...tdStyle, fontWeight: 600 }}>

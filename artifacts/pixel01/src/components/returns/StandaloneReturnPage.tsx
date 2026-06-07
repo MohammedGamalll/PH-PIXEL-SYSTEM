@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { toast } from "sonner";
 import { Trash2, Plus } from "lucide-react";
+import { useSearch } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useTreasuries, useCashierSessions } from "@/hooks/use-invoices";
@@ -117,7 +118,9 @@ export function StandaloneReturnPage() {
   const submitFn = createStandaloneReturn;
 
   const { data: sessions = [] } = useCashierSessions();
+  const { sessionId: urlSessionId } = useSearch({ strict: false }) as { sessionId?: string };
   const activeSession = sessions.find((s: any) => s.status === "open" && s.user_id === user?.id);
+  const linkedSessionId = urlSessionId || activeSession?.id;
 
   const [returnType, setReturnType] = useState<"sales" | "purchase">("sales");
   const [treasuryId, setTreasuryId] = useState<string>("");
@@ -333,7 +336,7 @@ export function StandaloneReturnPage() {
           contact_id: partyMode === "cash" ? null : (contactId || null),
           contact_type: partyMode === "cash" ? null : partyMode,
           payment_method: paymentMethod,
-          session_id: activeSession?.id ?? undefined,
+          session_id: linkedSessionId ?? undefined,
         },
       });
     },
@@ -354,6 +357,7 @@ export function StandaloneReturnPage() {
       qc.invalidateQueries({ queryKey: ["standalone_returns"] });
       qc.invalidateQueries({ queryKey: ["contact-balances"] });
       qc.invalidateQueries({ queryKey: ["contact_payments"] });
+      qc.invalidateQueries({ queryKey: ["session-standalone-returns"] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -370,6 +374,12 @@ export function StandaloneReturnPage() {
   return (
     <div className="p-6 max-w-5xl mx-auto" dir="rtl">
       <h1 className="text-2xl font-bold mb-1">مرتجع حر</h1>
+      {linkedSessionId && (
+        <div className="mb-2 inline-flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm text-amber-900">
+          مرتبط بجلسة الكاشير الحالية
+          {urlSessionId ? ` (${urlSessionId.slice(0, 8)}…)` : ""}
+        </div>
+      )}
       <p className="text-sm text-muted-foreground mb-4">
         تسجيل مرتجع مبيعات أو مشتريات بدون فاتورة. يحدّث المخزون والخزينة والقيد المحاسبي تلقائياً.
       </p>

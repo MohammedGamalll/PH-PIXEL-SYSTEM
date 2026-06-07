@@ -900,6 +900,7 @@ export function CashierApp({ sessionId }: Props) {
         <ToolbarBtn icon={<ArrowDownCircle size={14} />} label={t("sales.cashier.pay_in")} bg="#d8ece6" fg="#2b9d7b" onClick={() => setPayInOpen(true)} />
         <ToolbarBtn icon={<ArrowUpCircle size={14} />} label={t("sales.cashier.pay_out")} bg="#fde6d2" fg="#d97a2b" onClick={() => setPayOutOpen(true)} />
         <ToolbarBtn icon={<Undo2 size={14} />} label={t("sales.cashier.returns")} bg="#e3e7d8" fg="#7a8c4a" onClick={() => setReturnLookupOpen(true)} />
+        <ToolbarBtn icon={<Undo2 size={14} />} label={lang === "ar" ? "مرتجع حر" : "Standalone return"} bg="#fef3c7" fg="#b45309" onClick={() => navigate({ to: "/returns/standalone", search: { sessionId } })} />
         <ToolbarBtn icon={<CalcIcon size={14} />} label={t("sales.cashier.calculator")} bg="#fdf1c8" fg="#c79b1f" onClick={() => setCalcOpen(true)} />
         <ToolbarBtn
           icon={productsPanelOpen ? <ListIcon size={14} /> : <ImageIcon size={14} />}

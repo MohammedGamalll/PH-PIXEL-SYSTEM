@@ -12,7 +12,9 @@ import {
   mergeSessionTransactionRows,
 } from "@/lib/cashier-session-data";
 import { ReceiptPrintable } from "./ReceiptPrintable";
-import { Printer, ArrowRightLeft, Pencil } from "lucide-react";
+import { StandaloneReturnDetailsModal } from "@/components/returns/StandaloneReturnDetailsModal";
+import type { SessionStandaloneReturn } from "@/lib/cashier-session-data";
+import { Printer, ArrowRightLeft, Pencil, Eye } from "lucide-react";
 
 type Props = {
   sessionId: string;
@@ -28,6 +30,7 @@ export function RecentTransactionsModal({ sessionId, onClose }: Props) {
   const [convertingId, setConvertingId] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [tab, setTab] = useState<"all" | "sale" | "sale_return" | "quotation" | "draft" | "payment" | "standalone_return">("all");
+  const [viewingStdReturn, setViewingStdReturn] = useState<SessionStandaloneReturn | null>(null);
 
   const { data: customers = [] } = useContacts("customer");
   const { data: suppliers = [] } = useContacts("supplier");
@@ -190,19 +193,43 @@ export function RecentTransactionsModal({ sessionId, onClose }: Props) {
                     <td style={td}>{r.invoice_number}</td>
                     <td style={td}>
                       {r.__isStandaloneReturn
-                        ? (returnTypeLabel + (r.reason ? ` — ${r.reason}` : ""))
+                        ? `${returnTypeLabel}${r.items_summary && r.items_summary !== "—" ? ` — ${r.items_summary}` : ""}${r.reason ? ` (${r.reason})` : ""}`
                         : r.__isPayment
                           ? contactName(r.contact_id, r.contact_type, r.contact_name_snapshot)
                           : custName(r.customer_id, r.customer_name_snapshot)}
                     </td>
                     <td style={td}>{new Date(r.created_at).toLocaleTimeString(locale)}</td>
                     <td style={{ ...td, color: isReturn ? "#dc2626" : undefined, fontWeight: isReturn ? 700 : undefined }}>{typeLabel(r.type)}</td>
-                    <td style={td}>{r.__isStandaloneReturn ? "—" : methodLabel(r.payment_method)}</td>
+                    <td style={td}>{r.__isStandaloneReturn ? (r.payment_method === "account" ? "على حساب" : "نقدي") : methodLabel(r.payment_method)}</td>
                     <td style={{ ...td, fontWeight: 700, color: isReturn ? "#dc2626" : undefined }}>
                       {r.__isStandaloneReturn ? `-${Number(r.total).toFixed(2)}` : Number(r.total).toFixed(2)}
                     </td>
                     <td style={td}>
                       <div style={{ display: "inline-flex", gap: 4 }}>
+                        {r.__isStandaloneReturn && (
+                          <button
+                            type="button"
+                            onClick={() => setViewingStdReturn({
+                              id: r.id,
+                              reference_no: r.invoice_number,
+                              return_type: r.return_type,
+                              return_date: null,
+                              created_at: r.created_at,
+                              total_amount: r.total,
+                              reason: r.reason ?? null,
+                              payment_method: r.payment_method === "account" ? "account" : "cash",
+                              contact_id: null,
+                              contact_type: null,
+                              items: r.items ?? [],
+                              items_summary: r.items_summary ?? "—",
+                            })}
+                            title="عرض التفاصيل"
+                            style={iconBtn("#7c3aed")}
+                          >
+                            <Eye size={14} />
+                            عرض
+                          </button>
+                        )}
                         {!r.__isPayment && !r.__isStandaloneReturn && (
                           <button
                             type="button"
@@ -304,6 +331,14 @@ export function RecentTransactionsModal({ sessionId, onClose }: Props) {
           invoice={printingRow}
           items={printItems as any[]}
           customerName={custName(printingRow.customer_id)}
+        />
+      )}
+
+      {viewingStdReturn && (
+        <StandaloneReturnDetailsModal
+          returnId={viewingStdReturn.id}
+          preview={viewingStdReturn}
+          onClose={() => setViewingStdReturn(null)}
         />
       )}
     </>
