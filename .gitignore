@@ -51,3 +51,7 @@ Thumbs.db
 # Environment secrets
 .env
 artifacts/**/.env
+
+# DB clone artifacts
+lib/db/scripts/.clone-dumps/
+.vercel
