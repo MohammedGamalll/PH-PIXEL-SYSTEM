@@ -21,6 +21,7 @@ import { useAutoRef } from "@/hooks/use-auto-ref";
 import { useFormDraft } from "@/hooks/use-form-draft";
 import { useContactBalances, computeContactDue } from "@/hooks/use-contact-balances";
 import { useUnsavedChangesPrompt } from "@/hooks/use-unsaved-prompt";
+import { applySalesOverpayment, computeOverpayment } from "@/lib/contact-overpayment";
 
 
 const labelStyle: React.CSSProperties = { color: "#374151", fontSize: 13, fontWeight: 600 };
@@ -143,6 +144,11 @@ export function InvoiceForm({
     if (initial?.payment_method) base.method = initial.payment_method as any;
     return base;
   });
+  const saleOverpay = useMemo(
+    () => (mode === "sale" ? computeOverpayment(payment.amount, total) : { appliedPaid: 0, overPaid: 0 }),
+    [mode, payment.amount, total],
+  );
+  const overPaidAmount = saleOverpay.overPaid;
   const invPrefix = mode === "draft" ? "DRF" : mode === "quotation" ? "QTE" : mode === "sale_return" ? "RET" : "INV";
   const [autoInvNo] = useAutoRef("invoices", "invoice_number", invPrefix, true);
   const [printingInvoice, setPrintingInvoice] = useState<any>(null);
@@ -291,7 +297,28 @@ export function InvoiceForm({
       }
     }
 
-    const paid = mode === "sale" ? payment.amount : 0;
+    const paidRaw = mode === "sale" ? payment.amount : 0;
+    const { appliedPaid: paid, overPaid } = mode === "sale"
+      ? computeOverpayment(paidRaw, total)
+      : { appliedPaid: 0, overPaid: 0 };
+
+    const applyCustomerOverpay = async (invoiceRef?: string | null) => {
+      if (mode !== "sale" || overPaid <= 0.0001) return;
+      if (!customerId) {
+        toast.warning(`تم حفظ الفاتورة لكن زيادة الدفع (${overPaid.toFixed(2)}) لم تُضاف — اختر عميلاً`);
+        return;
+      }
+      await applySalesOverpayment({
+        contactId: customerId,
+        overPaid,
+        ownerId,
+        refNo: invoiceRef ?? autoInvNo ?? undefined,
+        paymentMethod: payment.method,
+        note: `زيادة دفع على فاتورة بيع ${invoiceRef || autoInvNo || ""}`.trim(),
+        contactType: "customer",
+      });
+    };
+
     const itemsPayload = rows.map((r) => ({
       product_id: r.product_id,
       description: r.description,
@@ -324,10 +351,11 @@ export function InvoiceForm({
           warehouse_id: warehouseId || null,
         },
         items: itemsPayload,
-        payment: mode === "sale" && paid > 0
-          ? { amount: paid, payment_method: payment.method, treasury_id: null }
+        payment: mode === "sale" && paidRaw > 0
+          ? { amount: paidRaw, payment_method: payment.method, treasury_id: null }
           : null,
       });
+      await applyCustomerOverpay();
       submittedRef.current = true;
       setSubmitted(true);
       navigate({ to: REDIRECT[mode] });
@@ -353,6 +381,12 @@ export function InvoiceForm({
       warehouse_id: warehouseId || null,
       items: itemsPayload,
     });
+    const { data: createdInv } = await supabase
+      .from("invoices")
+      .select("invoice_number")
+      .eq("id", id)
+      .maybeSingle();
+    await applyCustomerOverpay((createdInv as any)?.invoice_number ?? autoInvNo);
     submittedRef.current = true;
     setSubmitted(true);
     if (andPrint) {
@@ -570,6 +604,13 @@ export function InvoiceForm({
           <div className="rounded-md px-4 py-2.5 mt-3 inline-block" style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca" }}>
             <span className="text-sm font-bold" style={{ color: "#b91c1c" }}>{t("sales.form.due_amount").replace("{amount}", Math.max(0, total - payment.amount).toFixed(2))}</span>
           </div>
+          {overPaidAmount > 0.0001 && (
+            <div className="rounded-md px-4 py-2.5 mt-2 inline-block" style={{ backgroundColor: "#ecfeff", border: "1px solid #a5f3fc" }}>
+              <span className="text-sm font-bold" style={{ color: "#0e7490" }}>
+                {"زيادة الدفع: "}{overPaidAmount.toFixed(2)}{" (سيُضاف رصيد للعميل)"}
+              </span>
+            </div>
+          )}
         </>
       )}
 
