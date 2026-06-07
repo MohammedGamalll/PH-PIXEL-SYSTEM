@@ -21,7 +21,7 @@ import { useAutoRef } from "@/hooks/use-auto-ref";
 import { useFormDraft } from "@/hooks/use-form-draft";
 import { useContactBalances, computeContactDue } from "@/hooks/use-contact-balances";
 import { useUnsavedChangesPrompt } from "@/hooks/use-unsaved-prompt";
-import { applySalesOverpayment, computeOverpayment } from "@/lib/contact-overpayment";
+import { recordContactDocumentPayment, computeOverpayment } from "@/lib/contact-overpayment";
 
 
 const labelStyle: React.CSSProperties = { color: "#374151", fontSize: 13, fontWeight: 600 };
@@ -302,20 +302,28 @@ export function InvoiceForm({
       ? computeOverpayment(paidRaw, total)
       : { appliedPaid: 0, overPaid: 0 };
 
-    const applyCustomerOverpay = async (invoiceRef?: string | null) => {
-      if (mode !== "sale" || overPaid <= 0.0001) return;
+    const recordCustomerPayment = async (invoiceId: string, invoiceRef?: string | null) => {
+      if (mode !== "sale" || Number(payment.amount || 0) <= 0.0001) return;
       if (!customerId) {
-        toast.warning(`تم حفظ الفاتورة لكن زيادة الدفع (${overPaid.toFixed(2)}) لم تُضاف — اختر عميلاً`);
+        if (overPaid > 0.0001) {
+          toast.warning(`تم حفظ الفاتورة لكن الدفع (${Number(payment.amount).toFixed(2)}) لم يُسجّل — اختر عميلاً`);
+        }
         return;
       }
-      await applySalesOverpayment({
+      await recordContactDocumentPayment({
         contactId: customerId,
-        overPaid,
+        contactType: "customer",
+        direction: "in",
+        paidAmount: Number(payment.amount) || 0,
+        appliedPaid: paid,
+        documentType: "invoice",
+        documentId: invoiceId,
         ownerId,
         refNo: invoiceRef ?? autoInvNo ?? undefined,
         paymentMethod: payment.method,
-        note: `زيادة دفع على فاتورة بيع ${invoiceRef || autoInvNo || ""}`.trim(),
-        contactType: "customer",
+        treasuryAccountId: payment.account || null,
+        paymentDate: payment.date?.slice(0, 10) ?? null,
+        note: `دفعة فاتورة بيع ${invoiceRef || autoInvNo || ""}`.trim(),
       });
     };
 
@@ -355,7 +363,6 @@ export function InvoiceForm({
           ? { amount: paidRaw, payment_method: payment.method, treasury_id: null }
           : null,
       });
-      await applyCustomerOverpay();
       submittedRef.current = true;
       setSubmitted(true);
       navigate({ to: REDIRECT[mode] });
@@ -386,7 +393,7 @@ export function InvoiceForm({
       .select("invoice_number")
       .eq("id", id)
       .maybeSingle();
-    await applyCustomerOverpay((createdInv as any)?.invoice_number ?? autoInvNo);
+    await recordCustomerPayment(id, (createdInv as any)?.invoice_number ?? autoInvNo);
     submittedRef.current = true;
     setSubmitted(true);
     if (andPrint) {
@@ -607,7 +614,7 @@ export function InvoiceForm({
           {overPaidAmount > 0.0001 && (
             <div className="rounded-md px-4 py-2.5 mt-2 inline-block" style={{ backgroundColor: "#ecfeff", border: "1px solid #a5f3fc" }}>
               <span className="text-sm font-bold" style={{ color: "#0e7490" }}>
-                {"زيادة الدفع: "}{overPaidAmount.toFixed(2)}{" (سيُضاف رصيد للعميل)"}
+                {"زيادة الدفع: "}{overPaidAmount.toFixed(2)}{" (ستُسجَّل كدفعة في حساب العميل)"}
               </span>
             </div>
           )}

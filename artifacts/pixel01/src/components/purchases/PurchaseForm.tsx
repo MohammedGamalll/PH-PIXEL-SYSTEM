@@ -18,7 +18,7 @@ import { useContactBalances, computeContactDue } from "@/hooks/use-contact-balan
 import { useFormDraft } from "@/hooks/use-form-draft";
 import { useOwnerId } from "@/lib/owner";
 import { useUnsavedChangesPrompt } from "@/hooks/use-unsaved-prompt";
-import { applyPurchaseOverpayment, computeOverpayment } from "@/lib/contact-overpayment";
+import { recordContactDocumentPayment, computeOverpayment } from "@/lib/contact-overpayment";
 
 const labelStyle: React.CSSProperties = { color: "#374151", fontSize: 13, fontWeight: 600 };
 const inputStyle: React.CSSProperties = { border: "1px solid #d1d5db", backgroundColor: "#ffffff", color: "#374151" };
@@ -172,22 +172,28 @@ export function PurchaseForm({ editingId, initial }: { editingId?: string; initi
       warehouse_id: null,
     };
 
-    const applySupplierOverpay = async () => {
-      if (overPaid <= 0.0001) return;
+    const recordSupplierPayment = async (purchaseId: string) => {
+      if (Number(payment.amount || 0) <= 0.0001) return;
       if (!supplierId) {
-        toast.warning(`تم حفظ الفاتورة لكن زيادة الدفع (${overPaid.toFixed(2)}) لم تُخصم — اختر مورداً`);
+        if (overPaid > 0.0001) {
+          toast.warning(`تم حفظ الفاتورة لكن الدفع (${Number(payment.amount).toFixed(2)}) لم يُسجّل — اختر مورداً`);
+        }
         return;
       }
-      await applyPurchaseOverpayment({
+      await recordContactDocumentPayment({
         contactId: supplierId,
-        overPaid,
+        contactType: "supplier",
+        direction: "out",
+        paidAmount: Number(payment.amount) || 0,
+        appliedPaid,
+        documentType: "purchase",
+        documentId: purchaseId,
         ownerId,
         refNo: refNo || undefined,
         paymentMethod: payment.method,
         treasuryAccountId: payment.account || null,
         paymentDate: payment.date?.slice(0, 10) ?? null,
-        note: `زيادة دفع على فاتورة شراء ${refNo || ""}`.trim(),
-        contactType: "supplier",
+        note: `دفعة فاتورة شراء ${refNo || ""}`.trim(),
       });
     };
 
@@ -202,10 +208,9 @@ export function PurchaseForm({ editingId, initial }: { editingId?: string; initi
             : undefined,
         } as any,
       });
-      await applySupplierOverpay();
     } else {
-      await create.mutateAsync({ ...header, items: itemsPayload });
-      await applySupplierOverpay();
+      const purchaseId = await create.mutateAsync({ ...header, items: itemsPayload });
+      await recordSupplierPayment(purchaseId);
     }
     submittedRef.current = true;
     setSubmitted(true);
@@ -286,7 +291,7 @@ export function PurchaseForm({ editingId, initial }: { editingId?: string; initi
       {overPaidAmount > 0.0001 && (
         <div className="rounded-md px-4 py-2.5 mt-2 inline-block" style={{ backgroundColor: "#ecfeff", border: "1px solid #a5f3fc" }}>
           <span className="text-sm font-bold" style={{ color: "#0e7490" }}>
-            {"زيادة الدفع: "}{overPaidAmount.toFixed(2)}{" (سيُخصم من رصيد المورد)"}
+                {"زيادة الدفع: "}{overPaidAmount.toFixed(2)}{" (ستُسجَّل كدفعة في حساب المورد)"}
           </span>
         </div>
       )}

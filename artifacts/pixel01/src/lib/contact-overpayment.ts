@@ -5,16 +5,20 @@ import { friendlyDbError, requireOwnerId } from "@/lib/db-errors";
 
 const OVERPAY_EPS = 0.0001;
 
-export type OverpaymentArgs = {
+export type RecordContactDocumentPaymentArgs = {
   contactId: string;
-  overPaid: number;
+  contactType: "supplier" | "customer";
+  direction: "in" | "out";
+  paidAmount: number;
+  appliedPaid: number;
+  documentType: "purchase" | "invoice";
+  documentId: string;
   ownerId: string | undefined;
   refNo?: string | null;
   note?: string | null;
   paymentMethod?: string | null;
   treasuryAccountId?: string | null;
   paymentDate?: string | null;
-  contactType?: "supplier" | "customer";
 };
 
 async function resolveTreasuryAccountId(accountOrTreasuryId: string | null | undefined): Promise<string | null> {
@@ -28,61 +32,63 @@ async function resolveTreasuryAccountId(accountOrTreasuryId: string | null | und
   return id;
 }
 
-/** Supplier overpayment: record surplus as payment out and reduce payable balance. */
-export async function applyPurchaseOverpayment(args: OverpaymentArgs): Promise<boolean> {
-  const overPaid = Number(args.overPaid) || 0;
-  if (overPaid <= OVERPAY_EPS) return false;
+/**
+ * Record one contact_payment for the full amount paid on a new invoice/purchase.
+ * Allocates up to the document total; surplus stays as credit via resettleContactDebt.
+ */
+export async function recordContactDocumentPayment(args: RecordContactDocumentPaymentArgs): Promise<boolean> {
+  const paidAmount = Number(args.paidAmount) || 0;
+  const appliedPaid = Math.max(0, Number(args.appliedPaid) || 0);
+  if (paidAmount <= OVERPAY_EPS) return false;
 
   const ownerId = requireOwnerId(args.ownerId);
-  const refNo = String(args.refNo || "").trim() || `PAY-${Date.now().toString(36).toUpperCase()}`;
+  const payRef = `PAY-${Date.now().toString(36).toUpperCase()}`;
   const treasuryAccountId = await resolveTreasuryAccountId(args.treasuryAccountId);
-  const contactType = args.contactType ?? "supplier";
+  const surplus = Math.max(0, paidAmount - appliedPaid);
 
-  const { error: ePay } = await (supabase.from("contact_payments") as any).insert({
-    owner_id: ownerId,
-    contact_id: args.contactId,
-    contact_type: contactType,
-    direction: "out",
-    amount: overPaid,
-    allocated_amount: 0,
-    payment_method: args.paymentMethod ?? "cash",
-    treasury_account_id: treasuryAccountId,
-    ref_no: refNo,
-    notes: args.note ?? `زيادة دفع على فاتورة شراء — ${overPaid.toFixed(2)}`,
-    payment_date: args.paymentDate ?? new Date().toISOString().slice(0, 10),
-  });
+  const { data: payRow, error: ePay } = await (supabase.from("contact_payments") as any)
+    .insert({
+      owner_id: ownerId,
+      contact_id: args.contactId,
+      contact_type: args.contactType,
+      direction: args.direction,
+      amount: paidAmount,
+      allocated_amount: appliedPaid,
+      payment_method: args.paymentMethod ?? "cash",
+      treasury_account_id: treasuryAccountId,
+      ref_no: payRef,
+      notes: args.note ?? `دفعة ${args.refNo || ""}`.trim(),
+      payment_date: args.paymentDate ?? new Date().toISOString().slice(0, 10),
+    })
+    .select("id")
+    .single();
   if (ePay) throw friendlyDbError(ePay);
 
-  try {
-    await resettleContactDebt({ data: { contact_id: args.contactId, direction: "out" } });
-  } catch (err) {
-    console.warn("resettleContactDebt (purchase overpay) failed", err);
+  if (appliedPaid > OVERPAY_EPS && payRow?.id) {
+    const { error: allocErr } = await (supabase.from("contact_payment_invoice_allocations") as any).insert({
+      owner_id: ownerId,
+      contact_payment_id: payRow.id,
+      document_type: args.documentType,
+      document_id: args.documentId,
+      allocated_amount: appliedPaid,
+    });
+    if (allocErr) throw friendlyDbError(allocErr);
   }
 
-  toast.success(`تم خصم زيادة الدفع (${overPaid.toFixed(2)}) من رصيد ${contactType === "supplier" ? "المورد" : "جهة الاتصال"}`);
-  return true;
-}
+  try {
+    await resettleContactDebt({ data: { contact_id: args.contactId, direction: args.direction } });
+  } catch (err) {
+    console.warn("resettleContactDebt failed", err);
+  }
 
-/** Customer overpayment: add surplus to advance_balance (credit for customer). */
-export async function applySalesOverpayment(args: OverpaymentArgs): Promise<boolean> {
-  const overPaid = Number(args.overPaid) || 0;
-  if (overPaid <= OVERPAY_EPS) return false;
-
-  requireOwnerId(args.ownerId);
-
-  const { data: old, error: selErr } = await (supabase.from("contacts") as any)
-    .select("advance_balance")
-    .eq("id", args.contactId)
-    .maybeSingle();
-  if (selErr) throw friendlyDbError(selErr);
-
-  const nextAdvance = Number(old?.advance_balance || 0) + overPaid;
-  const { error: updErr } = await (supabase.from("contacts") as any)
-    .update({ advance_balance: nextAdvance })
-    .eq("id", args.contactId);
-  if (updErr) throw friendlyDbError(updErr);
-
-  toast.success(`تم إضافة زيادة الدفع (${overPaid.toFixed(2)}) كرصيد للعميل`);
+  const contactLabel = args.contactType === "supplier" ? "المورد" : "العميل";
+  if (surplus > OVERPAY_EPS) {
+    toast.success(
+      `تم تسجيل الدفعة (${paidAmount.toFixed(2)}) في حساب ${contactLabel} — الفائض ${surplus.toFixed(2)} رصيد`,
+    );
+  } else {
+    toast.success(`تم تسجيل الدفعة (${paidAmount.toFixed(2)}) في حساب ${contactLabel}`);
+  }
   return true;
 }
 
