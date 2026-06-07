@@ -21,14 +21,15 @@ export function InvoicePaymentsModal({ open, onOpenChange, invoice }: Props) {
   const { data: payments = [] } = useInvoicePayments(invoice?.id);
   const add = useAddInvoicePayment();
 
-  const due = invoice ? Math.max(0, Number(invoice.total || 0) - Number(invoice.paid_amount || 0)) : 0;
-  const amountNum = Number(amount) || 0;
-  const overPaid = Math.max(0, amountNum - due);
   const [amount, setAmount] = useState<string>("");
   const [treasuryId, setTreasuryId] = useState<string>("");
   const [method, setMethod] = useState<string>("cash");
   const [note, setNote] = useState<string>("");
   const [date, setDate] = useState<string>(new Date().toISOString().slice(0, 10));
+
+  const due = invoice ? Math.max(0, Number(invoice.total || 0) - Number(invoice.paid_amount || 0)) : 0;
+  const amountNum = Number(amount) || 0;
+  const overPaid = Math.max(0, amountNum - due);
 
 
   if (!invoice) return null;

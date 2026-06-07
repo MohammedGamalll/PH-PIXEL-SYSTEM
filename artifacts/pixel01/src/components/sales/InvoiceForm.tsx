@@ -359,10 +359,14 @@ export function InvoiceForm({
           warehouse_id: warehouseId || null,
         },
         items: itemsPayload,
-        payment: mode === "sale" && paidRaw > 0
-          ? { amount: paidRaw, payment_method: payment.method, treasury_id: null }
-          : null,
+        payment: null,
       });
+      const { data: editedInv } = await supabase
+        .from("invoices")
+        .select("invoice_number")
+        .eq("id", editingId!)
+        .maybeSingle();
+      await recordCustomerPayment(editingId!, (editedInv as any)?.invoice_number ?? autoInvNo);
       submittedRef.current = true;
       setSubmitted(true);
       navigate({ to: REDIRECT[mode] });

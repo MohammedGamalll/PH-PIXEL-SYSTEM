@@ -203,11 +203,9 @@ export function PurchaseForm({ editingId, initial }: { editingId?: string; initi
         values: {
           ...header,
           items: itemsPayload,
-          payment: payment.amount > 0
-            ? { amount: payment.amount, payment_method: payment.method, treasury_id: null }
-            : undefined,
         } as any,
       });
+      await recordSupplierPayment(editingId!);
     } else {
       const purchaseId = await create.mutateAsync({ ...header, items: itemsPayload });
       await recordSupplierPayment(purchaseId);

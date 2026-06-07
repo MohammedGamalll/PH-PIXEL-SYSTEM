@@ -220,16 +220,6 @@ function ItemExchangePage() {
         const txType = netCash >= 0 ? "in" : "out";
         const txAmount = Math.abs(netCash);
         const desc = `تبادل أصناف ${exchangeRef} (${contactScope === "customer" ? "عميل" : "مورد"}: ${contactName})`;
-        const { error: txErr } = await (supabase.from("treasury_transactions") as any).insert({
-          owner_id: ownerId,
-          treasury_id: treasuryId,
-          amount: txAmount,
-          type: txType,
-          description: desc,
-          transaction_date: exchangeDate,
-        });
-        if (txErr) throw txErr;
-
         const treasuryAccountId = await requireTreasuryAccountId(treasuryId);
         const contactDirection = txType === "in" ? "out" : "in";
         const { error: cpErr } = await (supabase.from("contact_payments") as any).insert({

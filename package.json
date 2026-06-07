@@ -8,13 +8,15 @@
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "dev:api": "pnpm --filter @workspace/api-server run build && node --env-file=.env --enable-source-maps artifacts/api-server/dist/index.mjs",
-    "dev:web": "pnpm --filter @workspace/pixel01 run dev"
+    "dev:web": "pnpm --filter @workspace/pixel01 run dev",
+    "dev:all": "pnpm exec concurrently -n api,web -c blue,green \"pnpm dev:api\" \"pnpm dev:web\""
   },
   "private": true,
   "dependencies": {
     "serverless-http": "^3.2.0"
   },
   "devDependencies": {
+    "concurrently": "^9.1.2",
     "@vercel/node": "^5.1.14",
     "@rollup/rollup-win32-x64-msvc": "^4.61.1",
     "@tailwindcss/oxide-win32-x64-msvc": "^4.3.0",

@@ -11,6 +11,8 @@ import { LogOut, Languages } from "lucide-react";
 import { SettingsProvider, useSettings } from "@/contexts/SettingsContext";
 import { WarehouseProvider, useWarehouseContext } from "@/contexts/WarehouseContext";
 import { TopNavbar } from "@/components/layout/TopNavbar";
+import { useOwnerId } from "@/lib/owner";
+import { ensureTreasuryLinks } from "@/lib/ensure-treasury-links";
 
 
 
@@ -44,6 +46,12 @@ function AuthenticatedLayout() {
   }, [desktopSidebarOpen]);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { isAdmin, permissions, rawPermissions, isLoading: accessLoading } = useAccess();
+  const ownerId = useOwnerId();
+
+  useEffect(() => {
+    if (!ownerId) return;
+    void ensureTreasuryLinks(ownerId);
+  }, [ownerId]);
 
   useEffect(() => {
     if (!loading && !user) navigate({ to: "/login" });

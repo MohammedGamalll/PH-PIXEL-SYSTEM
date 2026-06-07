@@ -5,9 +5,14 @@ function createAdminClient() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !key) {
+    const missing = [
+      !url && "SUPABASE_URL (or VITE_SUPABASE_URL)",
+      !key && "SUPABASE_SERVICE_ROLE_KEY",
+    ].filter(Boolean).join(", ");
     throw new Error(
-      "Missing SUPABASE_URL and/or SUPABASE_SERVICE_ROLE_KEY environment variables. " +
-      "Add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY as Replit secrets."
+      `Missing server env: ${missing}. ` +
+      "Local: copy .env.example → .env, add SUPABASE_SERVICE_ROLE_KEY from Supabase Dashboard → Settings → API, then run `pnpm dev:all`. " +
+      "Vercel: Project Settings → Environment Variables → add SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, and SUPABASE_SERVICE_ROLE_KEY (not VITE_*), then redeploy."
     );
   }
 
