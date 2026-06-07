@@ -135,15 +135,39 @@ export function useCashFlow(from?: string, to?: string, accountId?: string) {
       const cashLines = all
         .filter((l) => isCashLike(l))
         .filter((l) => !accountId || l.account_id === accountId)
-        .sort((a, b) => a.entry_date.localeCompare(b.entry_date));
+        .sort((a, b) => {
+          const d = a.entry_date.localeCompare(b.entry_date);
+          return d !== 0 ? d : a.line_id.localeCompare(b.line_id);
+        });
+
+      const { data: accounts } = await (supabase.from("accounts") as any)
+        .select("id,opening_balance,account_type");
+      const openingByAccount = new Map<string, number>();
+      for (const a of (accounts ?? []) as any[]) {
+        openingByAccount.set(a.id, Number(a.opening_balance) || 0);
+      }
+
       let running = 0;
+      if (accountId) {
+        running = openingByAccount.get(accountId) ?? 0;
+      } else {
+        const cashAccountIds = new Set(cashLines.map((l) => l.account_id));
+        for (const id of cashAccountIds) running += openingByAccount.get(id) ?? 0;
+      }
+
       const enriched = cashLines.map((l) => {
-        running += l.debit - l.credit;
+        const debitNature = isDebitNature(l.account_type);
+        running += debitNature ? l.debit - l.credit : l.credit - l.debit;
         return { ...l, balance: running };
       });
       const totalDebit = cashLines.reduce((s, l) => s + l.debit, 0);
       const totalCredit = cashLines.reduce((s, l) => s + l.credit, 0);
-      return { rows: enriched.reverse(), totalDebit, totalCredit, closing: running };
+      const opening = accountId
+        ? (openingByAccount.get(accountId) ?? 0)
+        : [...new Set(cashLines.map((l) => l.account_id))].reduce(
+            (s, id) => s + (openingByAccount.get(id) ?? 0), 0);
+      const closing = enriched.length ? enriched[enriched.length - 1].balance : opening;
+      return { rows: enriched.slice().reverse(), totalDebit, totalCredit, opening, closing };
     },
   });
 }
@@ -228,13 +252,11 @@ export function useTradingReport(from?: string, to?: string, paymentMethod?: str
       const salesReturns = pnl.data!.totalReturns;
       const netPurchases = totalPurchases - purchaseReturns;
       const netSales = totalSales - salesReturns;
-      // Gross margin = revenue − COGS (cost of goods actually sold),
-      // not revenue − purchases. Purchases inflate inventory; only
-      // sold items hit profit.
       const cogs = pnl.data!.cogs;
-      const grossMargin = netSales - cogs;
+      const grossMargin = netSales - netPurchases;
+      const tradingProfit = netSales - netPurchases;
 
-      return { totalPurchases, purchaseReturns, netPurchases, totalSales, salesReturns, netSales, cogs, grossMargin };
+      return { totalPurchases, purchaseReturns, netPurchases, totalSales, salesReturns, netSales, cogs, grossMargin, tradingProfit };
     },
   });
 }

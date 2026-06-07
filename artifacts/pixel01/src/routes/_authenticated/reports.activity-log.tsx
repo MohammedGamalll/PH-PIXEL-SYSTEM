@@ -7,6 +7,8 @@ import { PageHeader } from "@/components/products/PageHeader";
 import { ReportTable } from "@/components/reports/ReportTable";
 import type { ColumnDef } from "@/components/products/TableToolbar";
 import { useI18n } from "@/lib/i18n";
+import { InvoiceDetailsModal } from "@/components/sales/InvoiceDetailsModal";
+import { PurchaseDetailsModal } from "@/components/purchases/PurchaseDetailsModal";
 
 export const Route = createFileRoute("/_authenticated/reports/activity-log")({
   component: ActivityLogPage,
@@ -99,6 +101,8 @@ function ActivityLogPage() {
   const [actionFilter, setActionFilter] = useState("");
   const [employeeFilter, setEmployeeFilter] = useState("");
   const [excludeAuth, setExcludeAuth] = useState(true);
+  const [viewInvoice, setViewInvoice] = useState<any | null>(null);
+  const [viewPurchase, setViewPurchase] = useState<any | null>(null);
 
 
   const { data: logs = [] } = useQuery({
@@ -161,7 +165,10 @@ function ActivityLogPage() {
           created_at: new Date(l.created_at).toLocaleString(locale),
           actor: l.actor_name || (l.employee_id ? empMap.get(l.employee_id) : null) || (isAr ? "المالك" : "Owner"),
           action: lbl ? (isAr ? lbl.ar : lbl.en) : l.action_type,
+          action_type: l.action_type,
           subject: l.subject_label || "—",
+          subject_id: l.subject_id,
+          subject_type: l.subject_type,
           details: formatDetails(l.action_type, l.details, isAr),
           ip: l.ip_address || "—",
         };
@@ -215,10 +222,60 @@ function ActivityLogPage() {
         initialCols={cols}
         rowKey={(r) => r.id}
         searchFields={(r) => `${r.actor} ${r.action} ${r.subject} ${r.details}`}
-        cellFor={(r, k) => (r as any)[k]}
+        cellFor={(r, k) => {
+          const row = r as any;
+          if (k === "subject" && row.subject_id) {
+            const isInvoice =
+              row.subject_type === "invoice" || String(row.action_type || "").includes("invoice");
+            const isPurchase =
+              row.subject_type === "purchase" || String(row.action_type || "").startsWith("purchase_");
+            if (isInvoice) {
+              return (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const { data } = await supabase.from("invoices").select("*").eq("id", row.subject_id).maybeSingle();
+                    if (data) setViewInvoice(data);
+                  }}
+                  style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "#2563eb", textDecoration: "underline", font: "inherit" }}
+                >
+                  {row.subject}
+                </button>
+              );
+            }
+            if (isPurchase) {
+              return (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const { data } = await supabase.from("purchases").select("*").eq("id", row.subject_id).maybeSingle();
+                    if (data) setViewPurchase(data);
+                  }}
+                  style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "#2563eb", textDecoration: "underline", font: "inherit" }}
+                >
+                  {row.subject}
+                </button>
+              );
+            }
+          }
+          return row[k];
+        }}
         numericKeys={[]}
         exportName="activity-log"
         printTitle="activity-log"
+      />
+      <InvoiceDetailsModal
+        open={!!viewInvoice}
+        onOpenChange={(v) => !v && setViewInvoice(null)}
+        invoice={viewInvoice}
+        customerName={viewInvoice?.customer_name_snapshot || ""}
+        onPrint={() => {}}
+      />
+      <PurchaseDetailsModal
+        open={!!viewPurchase}
+        onOpenChange={(v) => !v && setViewPurchase(null)}
+        purchase={viewPurchase}
+        supplierName={viewPurchase?.supplier_name_snapshot || ""}
       />
     </div>
   );

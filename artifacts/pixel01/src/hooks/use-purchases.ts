@@ -85,7 +85,6 @@ export function usePurchaseReturns() {
         .from("purchase_returns")
         .select("*")
         .order("return_date", { ascending: false });
-      if (currentWarehouseId) q = (q as any).eq("warehouse_id", currentWarehouseId);
       const { data, error } = await q;
       if (error) throw error;
       return data ?? [];
@@ -329,7 +328,6 @@ export function useCreatePurchaseReturn() {
           ...header,
           owner_id: effectiveOwnerId,
           created_by: user!.id,
-          warehouse_id: whId,
         })
         .select("id")
         .single();
@@ -547,24 +545,31 @@ export function usePurchasePayments(purchaseId?: string) {
     queryKey: ["purchase_payments", purchaseId],
     enabled: !!user && !!purchaseId,
     queryFn: async () => {
-      const { data: tx, error } = await (supabase.from("treasury_transactions") as any)
-        .select("*")
-        .eq("reference", purchaseId)
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      const txRows = (tx ?? []) as any[];
+      const [txRes, allocRes] = await Promise.all([
+        (supabase.from("treasury_transactions") as any)
+          .select("*")
+          .eq("reference", purchaseId)
+          .order("created_at", { ascending: false }),
+        (supabase.from("contact_payment_invoice_allocations") as any)
+          .select("*, contact_payments(*)")
+          .eq("document_type", "purchase")
+          .eq("document_id", purchaseId),
+      ]);
+      if (txRes.error) throw txRes.error;
 
-      const origTxIds = Array.from(new Set(txRows.filter((r) => r.original_transaction_id).map((r) => r.original_transaction_id)));
-      if (origTxIds.length) {
-        const { data: origs } = await (supabase.from("treasury_transactions") as any)
-          .select("id,description").in("id", origTxIds);
-        const m = new Map((origs ?? []).map((o: any) => [o.id, o.description]));
-        for (const r of txRows) if (r.original_transaction_id) (r as any).original_ref_no = m.get(r.original_transaction_id) ?? null;
-      }
+      const txRows = (txRes.data ?? []) as any[];
+      const allocRows = (allocRes.data ?? []) as any[];
+      const cpFromAlloc = allocRows.map((a) => ({
+        ...(a.contact_payments ?? {}),
+        source: "contact_payment",
+        allocated_amount: a.allocated_amount,
+      }));
 
-      // Only show payments tied to THIS purchase (treasury_transactions referenced to it)
-      const merged = txRows.map((t) => ({ ...t, source: "treasury" }));
-      merged.sort((a, b) => String(b.created_at || b.transaction_date).localeCompare(String(a.created_at || a.transaction_date)));
+      const merged = [
+        ...txRows.map((t) => ({ ...t, source: "treasury" as const })),
+        ...cpFromAlloc,
+      ];
+      merged.sort((a, b) => String(b.created_at || b.payment_date || b.transaction_date).localeCompare(String(a.created_at || a.payment_date || a.transaction_date)));
       return merged;
     },
   });

@@ -166,7 +166,7 @@ export function SalesReturnsPage() {
               {pageRows.length === 0 ? <EmptyRow colSpan={visible.length} /> : pageRows.map((r) => (
                 <tr key={r.id}>
                   {visible.map((c) => c.key === "opt" ? (
-                    <td key={c.key} style={cellStyle}>
+                    <td key={c.key} style={cellStyle} data-print-hide="1">
                       <div className="flex gap-1">
                         <button onClick={() => setViewingId(r.id)} className="h-8 px-2 inline-flex items-center gap-1 text-xs rounded text-white" style={{ backgroundColor: "#3b82f6" }}>
                           <Eye className="h-3 w-3" /> {t("sales.actions.view")}

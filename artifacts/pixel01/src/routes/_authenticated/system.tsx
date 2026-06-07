@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useCurrentEmployee } from "@/hooks/use-current-employee";
-import { supabase } from "@/integrations/supabase/client";
 import {
   getYearEndStatus,
   getYearEndDebtPreview,
@@ -22,45 +21,11 @@ function SystemPage() {
   return (
     <div className="p-6 space-y-6 max-w-4xl mx-auto" dir="rtl">
       <h1 className="text-2xl font-bold">إدارة النظام</h1>
-      <RecalcStockCard />
       <YearEndCard />
       <BackupCard />
     </div>
   );
 }
-
-function RecalcStockCard() {
-  const [loading, setLoading] = useState(false);
-  const onClick = async () => {
-    if (!confirm("سيتم إعادة حساب رصيد المخزون لكل الأصناف من الحركات الفعلية. متابعة؟")) return;
-    setLoading(true);
-    try {
-      const { data, error } = await supabase.rpc("recalc_product_stock" as any);
-      if (error) throw error;
-      toast.success(`تمت المزامنة. تم تحديث ${data ?? 0} صنف`);
-    } catch (e: any) {
-      toast.error(e.message || "فشلت المزامنة");
-    } finally {
-      setLoading(false);
-    }
-  };
-  return (
-    <div className="border rounded-lg p-5 bg-white shadow-sm">
-      <h2 className="text-lg font-bold mb-2">إعادة حساب المخزون</h2>
-      <p className="text-sm text-gray-600 mb-3">
-        يعيد حساب عمود المخزون لكل صنف من سجلات المشتريات والمبيعات والمرتجعات والتالف. استخدمه عند ظهور تعارض بين الكاشير وكرت الصنف.
-      </p>
-      <button
-        onClick={onClick}
-        disabled={loading}
-        className="px-4 py-2 rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60"
-      >
-        {loading ? "جاري المزامنة..." : "إعادة حساب الآن"}
-      </button>
-    </div>
-  );
-}
-
 
 function YearEndCard() {
   const fetchStatus = getYearEndStatus;

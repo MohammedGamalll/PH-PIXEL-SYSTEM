@@ -18,7 +18,7 @@ export type ProductBatch = {
  * so all screens (count form, product card, details) show identical numbers.
  */
 export async function computeProductBatches(productId: string): Promise<ProductBatch[]> {
-  const [pi, ii, pri, di, btIn, btOut] = await Promise.all([
+  const [pi, ii, pri, di, btIn, btOut, sri] = await Promise.all([
     (supabase.from("purchase_items") as any)
       .select("expiry_date, base_quantity, quantity")
       .eq("product_id", productId),
@@ -39,6 +39,9 @@ export async function computeProductBatches(productId: string): Promise<ProductB
     (supabase.from("inventory_branch_transfer_items") as any)
       .select("expiry_date, base_quantity, quantity")
       .eq("source_product_id", productId),
+    (supabase.from("standalone_return_items") as any)
+      .select("expiry_date, quantity, product_id, standalone_return:standalone_returns!inner(return_type)")
+      .eq("product_id", productId),
   ]);
 
 
@@ -97,6 +100,20 @@ export async function computeProductBatches(productId: string): Promise<ProductB
   });
   const prTotal = ((pri.data as any[]) || []).reduce(
     (s, r) => s + Number(r.base_quantity ?? r.quantity ?? 0), 0);
+
+  // Standalone returns: sales returns add stock; purchase returns reduce stock.
+  ((sri.data as any[]) || []).forEach((r) => {
+    const q = Number(r.quantity ?? 0);
+    if (!q) return;
+    const rt = r.standalone_return?.return_type;
+    if (rt === "sales") {
+      const key = r.expiry_date || "";
+      ensure(key).returned += q;
+    } else if (rt === "purchase") {
+      if (r.expiry_date) ensure(r.expiry_date).sold += q;
+      else fifoSold += q;
+    }
+  });
 
   // Tagged dates first (ascending), no-expiry batch last so FIFO drains it after.
   const list = Array.from(map.values()).sort((a, b) => {

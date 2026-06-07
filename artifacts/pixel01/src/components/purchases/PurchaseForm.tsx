@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/products/PageHeader";
 import { DataCard } from "@/components/products/DataCard";
 import { useContacts } from "@/hooks/use-contacts";
+import { useRecalcProductStock } from "@/hooks/use-recalc-stock";
 import { useCreatePurchase, useUpdatePurchase } from "@/hooks/use-purchases";
 import { PurchaseItemsTable, type Row } from "@/components/purchases/PurchaseItemsTable";
 import { PaymentSection, defaultPayment } from "@/components/shared/PaymentSection";
@@ -56,6 +57,7 @@ export type PurchaseFormInitial = {
 };
 
 export function PurchaseForm({ editingId, initial }: { editingId?: string; initial?: PurchaseFormInitial }) {
+  useRecalcProductStock();
   const { t, dir } = useI18n();
   const navigate = useNavigate();
   const { data: suppliers = [] } = useContacts("supplier");
@@ -122,6 +124,10 @@ export function PurchaseForm({ editingId, initial }: { editingId?: string; initi
         description: r.description ?? "", quantity: Number(r.quantity) || 0, unit_price: Number(r.unit_price) || 0,
       });
       if (!rc.success) { toast.error(`${r.description || "صنف"}: ${rc.error.issues[0]?.message}`); return; }
+      if (r.has_expiry && !r.expiry_date) {
+        toast.error(`${r.description || "صنف"}: تاريخ الصلاحية مطلوب`);
+        return;
+      }
       if (r.expiry_date) {
         const today = new Date().toISOString().slice(0, 10);
         if (r.expiry_date < today) { toast.error("تاريخ الصلاحية لا يمكن أن يكون قديمًا"); return; }

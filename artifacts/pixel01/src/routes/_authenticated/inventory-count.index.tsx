@@ -9,6 +9,17 @@ import { useI18n } from "@/lib/i18n";
 import { Plus, Eye, Edit3, Printer, Trash2, ChevronDown, ChevronUp, ArrowUpDown } from "lucide-react";
 import { toast } from "sonner";
 import { useCan } from "@/lib/can";
+import { formatMainQuantity, varianceValueFromBase, type ProductUnitTree } from "@/lib/units";
+
+function unitTreeFrom(p: any): ProductUnitTree {
+  return {
+    main_unit: p?.main_unit ?? null,
+    sub_unit_1: p?.sub_unit_1 ?? null,
+    sub_unit_1_ratio: p?.sub_unit_1_ratio ?? null,
+    sub_unit_2: p?.sub_unit_2 ?? null,
+    sub_unit_2_ratio: p?.sub_unit_2_ratio ?? null,
+  };
+}
 
 
 export const Route = createFileRoute("/_authenticated/inventory-count/")({
@@ -23,7 +34,7 @@ function InventoryDetailsRow({ id, isAr, dir }: { id: string; isAr: boolean; dir
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from("stock_adjustment_items")
-        .select("*, products(name, name_en, sku, main_unit)")
+        .select("*, products(name, name_en, sku, cost, main_unit, sub_unit_1, sub_unit_1_ratio, sub_unit_2, sub_unit_2_ratio)")
         .eq("adjustment_id", id)
         .order("created_at");
       if (error) throw error;
@@ -63,18 +74,21 @@ function InventoryDetailsRow({ id, isAr, dir }: { id: string; isAr: boolean; dir
         <tbody>
           {items.map((it: any) => {
             const v = Number(it.variance_qty || 0);
-            const vv = Number(it.variance_value || 0);
             const p = it.products || {};
+            const tree = unitTreeFrom(p);
+            const cost = Number(p.cost ?? it.cost_at_time ?? 0);
+            const vv = varianceValueFromBase(v, cost, tree);
+            const varDisplay = v === 0 ? formatMainQuantity(0, tree) : (v > 0 ? "+" : "-") + formatMainQuantity(Math.abs(v), tree);
             return (
               <tr key={it.id}>
                 <td style={subCell}>{isAr ? (p.name || "—") : (p.name_en || p.name || "—")}</td>
                 <td style={subCell}>{p.sku || "—"}</td>
-                <td style={subCell}>{fmt(Number(it.system_qty))}</td>
-                <td style={subCell}>{fmt(Number(it.physical_qty))}</td>
+                <td style={subCell}>{formatMainQuantity(Number(it.system_qty), tree)}</td>
+                <td style={subCell}>{formatMainQuantity(Number(it.physical_qty), tree)}</td>
                 <td style={{ ...subCell, color: v < 0 ? "#dc2626" : v > 0 ? "#16a34a" : "#6b7280", fontWeight: 600 }}>
-                  {v > 0 ? "+" : ""}{fmt(v)}
+                  {varDisplay}
                 </td>
-                <td style={subCell}>{fmt(Number(it.cost_at_time))}</td>
+                <td style={subCell}>{fmt(cost)}</td>
                 <td style={{ ...subCell, color: vv < 0 ? "#dc2626" : vv > 0 ? "#16a34a" : "#6b7280", fontWeight: 600 }}>
                   {vv > 0 ? "+" : ""}{fmt(vv)}
                 </td>
@@ -116,7 +130,28 @@ function InventoryCountIndex() {
         .select("*")
         .order("count_date", { ascending: false });
       if (error) throw error;
-      return data as any[];
+      const adjs = (data as any[]) ?? [];
+      if (adjs.length === 0) return adjs;
+
+      const { data: items, error: itemsErr } = await (supabase as any)
+        .from("stock_adjustment_items")
+        .select("adjustment_id, variance_qty, cost_at_time, products(cost, main_unit, sub_unit_1, sub_unit_1_ratio, sub_unit_2, sub_unit_2_ratio)")
+        .in("adjustment_id", adjs.map((a) => a.id));
+      if (itemsErr) throw itemsErr;
+
+      const valueByAdj = new Map<string, number>();
+      for (const it of (items ?? []) as any[]) {
+        const tree = unitTreeFrom(it.products || {});
+        const v = Number(it.variance_qty || 0);
+        const cost = Number(it.products?.cost ?? it.cost_at_time ?? 0);
+        const vv = varianceValueFromBase(v, cost, tree);
+        valueByAdj.set(it.adjustment_id, (valueByAdj.get(it.adjustment_id) ?? 0) + vv);
+      }
+
+      return adjs.map((a) => ({
+        ...a,
+        total_variance_value: valueByAdj.has(a.id) ? valueByAdj.get(a.id) : Number(a.total_variance_value || 0),
+      }));
     },
   });
 

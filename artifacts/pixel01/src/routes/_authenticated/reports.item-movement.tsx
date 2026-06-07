@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -8,6 +8,8 @@ import { ReportTable } from "@/components/reports/ReportTable";
 import type { ColumnDef } from "@/components/products/TableToolbar";
 import { useI18n } from "@/lib/i18n";
 import { useContacts } from "@/hooks/use-contacts";
+import { InvoiceDetailsModal } from "@/components/sales/InvoiceDetailsModal";
+import { PurchaseDetailsModal } from "@/components/purchases/PurchaseDetailsModal";
 
 export const Route = createFileRoute("/_authenticated/reports/item-movement")({
   component: ItemMovementPage,
@@ -28,8 +30,10 @@ type MovementRow = {
   sale_date: string;
   sale_date_raw: string;
   sale: string;
+  sale_id: string;
   customer: string;
   customer_id: string;
+  purchase_id: string;
   branch: string;
   qty: number;
   qty_label: string;
@@ -73,6 +77,10 @@ function ItemMovementPage() {
   const [pTo, setPTo] = useState("");
   const [sFrom, setSFrom] = useState("");
   const [sTo, setSTo] = useState("");
+  const [activeIdx, setActiveIdx] = useState(-1);
+  const [viewInvoice, setViewInvoice] = useState<any | null>(null);
+  const [viewPurchase, setViewPurchase] = useState<any | null>(null);
+  const tableRef = useRef<HTMLDivElement>(null);
 
   const { data: rows = [] } = useQuery({
     queryKey: ["item-movement"],
@@ -125,12 +133,14 @@ function ItemMovementPage() {
           purchase_date_raw: p.purchase_date || "",
           purchase_price: Number(it.unit_price) || 0,
           purchase: p.ref_no || p.purchase_number || "",
+          purchase_id: p.id,
           warehouse: p.branch_id || "",
           supplier: p.supplier_id ? supMap.get(p.supplier_id) || "" : "",
           supplier_id: p.supplier_id || "",
           sale_date: "",
           sale_date_raw: "",
           sale: "",
+          sale_id: "",
           customer: "",
           customer_id: "",
           branch: p.branch_id || "",
@@ -170,8 +180,10 @@ function ItemMovementPage() {
           sale_date: fmtDate(inv.issue_date, inv.created_at),
           sale_date_raw: inv.issue_date || "",
           sale: inv.invoice_number || "",
+          sale_id: inv.id,
           customer: inv.customer_id ? custMap.get(inv.customer_id) || "" : "",
           customer_id: inv.customer_id || "",
+          purchase_id: "",
           branch: "",
           qty: signedQty,
           qty_label: label,
@@ -199,6 +211,30 @@ function ItemMovementPage() {
       return true;
     });
   }, [rows, supplierId, customerId, pFrom, pTo, sFrom, sTo]);
+
+  useEffect(() => { setActiveIdx(-1); }, [filteredRows]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIdx((i) => Math.min(i + 1, filteredRows.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIdx((i) => Math.max(i - 1, 0));
+    }
+  }, [filteredRows.length]);
+
+  const openSale = async (row: MovementRow) => {
+    if (!row.sale_id) return;
+    const { data } = await supabase.from("invoices").select("*").eq("id", row.sale_id).maybeSingle();
+    if (data) setViewInvoice(data);
+  };
+
+  const openPurchase = async (row: MovementRow) => {
+    if (!row.purchase_id) return;
+    const { data } = await supabase.from("purchases").select("*").eq("id", row.purchase_id).maybeSingle();
+    if (data) setViewPurchase(data);
+  };
 
   const cols: ColumnDef[] = [
     { key: "item", label: t("reports.col.item"), visible: true },
@@ -256,28 +292,60 @@ function ItemMovementPage() {
           </div>
         </div>
       </div>
-      <ReportTable
-        rows={filteredRows}
-        initialCols={cols}
-        rowKey={(r) => r.id}
-        searchFields={(r) => `${r.item} ${r.sku} ${r.purchase} ${r.sale} ${r.supplier} ${r.customer}`}
-        cellFor={(r, k) => {
-          const row = r as MovementRow;
-          if (k === "qty") return row.qty_label || (row.qty ? `${row.qty.toFixed(2)} ${unitWord}` : "");
-          if (k === "base_qty") {
-            if (!row.base_qty) return "";
-            return <span style={{ fontSize: 11, color: "#9ca3af" }}>{row.base_qty.toFixed(2)}</span>;
-          }
-          if (k === "purchase_price" || k === "sale_price" || k === "total") {
-            const v = (row as any)[k] as number;
-            if (!v) return "";
-            return t("reports.currency", { n: v.toFixed(2) });
-          }
-          return (row as any)[k] ?? "";
-        }}
-        numericKeys={["purchase_price", "sale_price", "qty", "base_qty", "total"]}
-        exportName="item-movement-report"
-        printTitle="item-movement-report"
+      <div ref={tableRef} onKeyDown={handleKeyDown} tabIndex={0} style={{ outline: "none" }}>
+        <ReportTable
+          rows={filteredRows}
+          initialCols={cols}
+          rowKey={(r) => r.id}
+          searchFields={(r) => `${r.item} ${r.sku} ${r.purchase} ${r.sale} ${r.supplier} ${r.customer}`}
+          cellFor={(r, k) => {
+            const row = r as MovementRow;
+            if (k === "purchase" && row.purchase) {
+              return (
+                <button type="button" onClick={() => openPurchase(row)}
+                  style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "#2563eb", textDecoration: "underline", font: "inherit" }}>
+                  {row.purchase}
+                </button>
+              );
+            }
+            if (k === "sale" && row.sale) {
+              return (
+                <button type="button" onClick={() => openSale(row)}
+                  style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "#2563eb", textDecoration: "underline", font: "inherit" }}>
+                  {row.sale}
+                </button>
+              );
+            }
+            if (k === "qty") return row.qty_label || (row.qty ? `${row.qty.toFixed(2)} ${unitWord}` : "");
+            if (k === "base_qty") {
+              if (!row.base_qty) return "";
+              return <span style={{ fontSize: 11, color: "#9ca3af" }}>{row.base_qty.toFixed(2)}</span>;
+            }
+            if (k === "purchase_price" || k === "sale_price" || k === "total") {
+              const v = (row as any)[k] as number;
+              if (!v) return "";
+              return t("reports.currency", { n: v.toFixed(2) });
+            }
+            return (row as any)[k] ?? "";
+          }}
+          numericKeys={["purchase_price", "sale_price", "qty", "base_qty", "total"]}
+          exportName="item-movement-report"
+          printTitle="item-movement-report"
+          activeIdx={activeIdx}
+          onRowClick={(_r, i) => setActiveIdx(i)}
+        />
+      </div>
+      <InvoiceDetailsModal
+        open={!!viewInvoice}
+        onOpenChange={(v) => !v && setViewInvoice(null)}
+        invoice={viewInvoice}
+        customerName={viewInvoice?.customer_name_snapshot || ""}
+        onPrint={() => {}}
+      />
+      <PurchaseDetailsModal
+        open={!!viewPurchase}
+        onOpenChange={(v) => !v && setViewPurchase(null)}
+        purchase={viewPurchase}
       />
     </div>
   );

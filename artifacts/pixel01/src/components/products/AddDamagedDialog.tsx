@@ -87,7 +87,10 @@ export function AddDamagedDialog({ open, onOpenChange }: Props) {
   const matches = useMemo(() => {
     if (!search.trim()) return [];
     const q = normalizeArabicText(search);
-    return products.filter((p: any) => normalizeArabicText((p.name || "") + " " + (p.sku ?? "")).includes(q)).slice(0, 5);
+    return products.filter((p: any) => {
+      const hay = normalizeArabicText(`${p.name || ""} ${p.name_en || ""} ${p.sku ?? ""} ${p.barcode ?? ""}`);
+      return hay.includes(q);
+    }).slice(0, 5);
   }, [search, products]);
 
   const total = items.reduce((s, i) => s + i.quantity * i.unit_price, 0);

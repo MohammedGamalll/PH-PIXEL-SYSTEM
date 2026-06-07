@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Trash2, ArrowLeftRight, Search } from "lucide-react";
 import { DataCard } from "@/components/products/DataCard";
@@ -228,12 +228,13 @@ function ItemExchangePage() {
         });
         if (txErr) throw txErr;
 
+        const contactDirection = txType === "in" ? "out" : "in";
         const { error: cpErr } = await (supabase.from("contact_payments") as any).insert({
           owner_id: ownerId,
           contact_id: contactId,
           contact_type: contactScope,
           contact_name_snapshot: contactName || null,
-          direction: txType,
+          direction: contactDirection,
           amount: txAmount,
           allocated_amount: txAmount,
           payment_method: "cash",
@@ -351,6 +352,8 @@ function ItemExchangePage() {
 
 function ProductSearch({ products, onPick }: { products: any[]; onPick: (id: string) => void }) {
   const [q, setQ] = useState("");
+  const [activeIdx, setActiveIdx] = useState(0);
+  const autoAddRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const matches = useMemo(() => {
     const s = normalizeArabicText(q.trim());
     if (!s) return [];
@@ -360,7 +363,16 @@ function ProductSearch({ products, onPick }: { products: any[]; onPick: (id: str
     }).slice(0, 8);
   }, [q, products]);
 
-  const pick = (id: string) => { onPick(id); setQ(""); };
+  const pick = (id: string) => { onPick(id); setQ(""); setActiveIdx(0); };
+
+  useEffect(() => {
+    setActiveIdx(0);
+    if (autoAddRef.current) clearTimeout(autoAddRef.current);
+    if (!q.trim() || matches.length !== 1) return;
+    autoAddRef.current = setTimeout(() => pick(matches[0].id), 250);
+    return () => { if (autoAddRef.current) clearTimeout(autoAddRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, matches]);
 
   return (
     <div className="relative">
@@ -370,9 +382,23 @@ function ProductSearch({ products, onPick }: { products: any[]; onPick: (id: str
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => {
+            if (e.key === "ArrowDown" && matches.length > 0) {
+              e.preventDefault();
+              setActiveIdx((i) => Math.min(matches.length - 1, i + 1));
+              return;
+            }
+            if (e.key === "ArrowUp" && matches.length > 0) {
+              e.preventDefault();
+              setActiveIdx((i) => Math.max(0, i - 1));
+              return;
+            }
+            if (e.key === "Escape") {
+              setQ("");
+              return;
+            }
             if (e.key === "Enter" && matches.length >= 1) {
               e.preventDefault();
-              pick(matches[0].id);
+              pick(matches[Math.min(activeIdx, matches.length - 1)].id);
             }
           }}
           placeholder="ابحث بالاسم (عربي/إنجليزي) أو الكود ثم اختر..."
@@ -381,12 +407,14 @@ function ProductSearch({ products, onPick }: { products: any[]; onPick: (id: str
       </div>
       {q.trim() && matches.length > 0 && (
         <div className="absolute z-20 mt-1 w-full bg-white border rounded shadow max-h-64 overflow-auto">
-          {matches.map((p) => (
+          {matches.map((p, idx) => (
             <button
               key={p.id}
               type="button"
               onClick={() => pick(p.id)}
-              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-sm hover:bg-blue-50 text-right"
+              onMouseEnter={() => setActiveIdx(idx)}
+              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-sm text-right"
+              style={{ backgroundColor: idx === activeIdx ? "#eff6ff" : "transparent" }}
             >
               <span className="flex-1 font-semibold">{p.name}</span>
               {p.sku && <span className="text-xs text-slate-500 font-mono">{p.sku}</span>}

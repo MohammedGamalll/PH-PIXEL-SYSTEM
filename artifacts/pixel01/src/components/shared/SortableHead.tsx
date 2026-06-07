@@ -27,7 +27,7 @@ export function SortableHead({
       {cols.map((c) => {
         const skip = nonSortable.includes(c.key);
         return (
-          <th key={c.key} style={headStyle}>
+          <th key={c.key} style={headStyle} data-print-hide={skip ? "1" : undefined}>
             {skip ? (
               c.label
             ) : (

@@ -29,6 +29,7 @@ const btn: React.CSSProperties = {
 export function SelectExpiryDateModal({ product, onClose, onSelect }: Props) {
   const { data: batches = [], isLoading } = useProductBatches(product?.id);
   const [manual, setManual] = useState("");
+  const [manualError, setManualError] = useState<string | null>(null);
   const [activeIdx, setActiveIdx] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -137,11 +138,27 @@ export function SelectExpiryDateModal({ product, onClose, onSelect }: Props) {
         <input
           type="date"
           value={manual}
-          onChange={(e) => setManual(e.target.value)}
+          onChange={(e) => { setManual(e.target.value); setManualError(null); }}
           style={{ ...inputStyle, flex: 1 }}
         />
+        {manualError && (
+          <div style={{ fontSize: 11, color: "#b91c1c", marginTop: 4 }}>{manualError}</div>
+        )}
         <button
-          onClick={() => manual && onSelect(manual)}
+          onClick={() => {
+            if (!manual) return;
+            const today = new Date().toISOString().slice(0, 10);
+            if (manual < today) {
+              setManualError("تاريخ الصلاحية منتهٍ — لا يمكن بيع هذه الدفعة.");
+              return;
+            }
+            const batch = batches.find((b) => b.expiry_date === manual);
+            if (!batch || batch.remaining <= 0) {
+              setManualError("لا يوجد رصيد لهذه الدفعة — اختر تاريخاً من القائمة.");
+              return;
+            }
+            onSelect(manual);
+          }}
           disabled={!manual}
           style={{ ...btn, background: manual ? "#2563eb" : "#9ca3af", color: "#fff" }}
         >

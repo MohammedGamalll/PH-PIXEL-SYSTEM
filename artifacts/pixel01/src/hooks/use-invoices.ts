@@ -380,12 +380,22 @@ export function useConvertInvoice() {
  * - Stock is untouched (the sale itself still stands).
  */
 export function useConvertSaleToCredit() {
+  const { user } = useAuth();
+  const ownerId = useOwnerId();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({
       invoiceId,
       customerId,
     }: { invoiceId: string; customerId: string }) => {
+      const { data: inv, error: fetchErr } = await (supabase.from("invoices") as any)
+        .select("id, invoice_number, paid_amount, total, payment_method")
+        .eq("id", invoiceId)
+        .maybeSingle();
+      if (fetchErr) throw fetchErr;
+      if (!inv) throw new Error("الفاتورة غير موجودة");
+      const oldPaid = Number(inv.paid_amount || 0);
+
       const { error } = await (supabase.from("invoices") as any)
         .update({
           customer_id: customerId,
@@ -398,6 +408,29 @@ export function useConvertSaleToCredit() {
         })
         .eq("id", invoiceId);
       if (error) throw error;
+
+      if (oldPaid > 0 && customerId) {
+        const { error: cpErr } = await (supabase.from("contact_payments") as any).insert({
+          owner_id: requireOwnerId(ownerId),
+          contact_id: customerId,
+          contact_type: "customer",
+          direction: "in",
+          amount: oldPaid,
+          allocated_amount: 0,
+          payment_method: "account",
+          ref_no: inv.invoice_number,
+          notes: `رصيد من مدفوعات سابقة — تحويل الفاتورة ${inv.invoice_number} إلى آجل`,
+          payment_date: new Date().toISOString().slice(0, 10),
+          created_by: user!.id,
+        });
+        if (cpErr) throw cpErr;
+        try {
+          const { resettleContactDebt } = await import("@/lib/debt-allocation.functions");
+          await resettleContactDebt({ data: { contact_id: customerId, direction: "in" } });
+        } catch {
+          /* non-fatal */
+        }
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["invoices"] });
@@ -987,6 +1020,40 @@ export function useAddInvoicePayment() {
         .update({ paid_amount: newPaid, payment_status: status, payment_method: args.payment_method ?? args.invoice.payment_method })
         .eq("id", args.invoice.id);
       if (e2) throw e2;
+
+      if (args.invoice.customer_id) {
+        const { data: tr } = await (supabase.from("treasuries") as any)
+          .select("account_id")
+          .eq("id", args.treasury_id)
+          .maybeSingle();
+        const { data: cpRow, error: cpErr } = await (supabase.from("contact_payments") as any)
+          .insert({
+            owner_id: requireOwnerId(ownerId),
+            contact_id: args.invoice.customer_id,
+            contact_type: "customer",
+            direction: "in",
+            amount: cappedAmount,
+            allocated_amount: cappedAmount,
+            payment_method: args.payment_method ?? "cash",
+            treasury_account_id: tr?.account_id ?? null,
+            ref_no: args.invoice.invoice_number,
+            notes: args.note ?? `دفعة للفاتورة ${args.invoice.invoice_number}`,
+            payment_date: args.transaction_date ?? new Date().toISOString().slice(0, 10),
+            created_by: user!.id,
+          })
+          .select("id")
+          .single();
+        if (cpErr) throw cpErr;
+        if (cpRow?.id) {
+          await (supabase.from("contact_payment_invoice_allocations") as any).insert({
+            owner_id: requireOwnerId(ownerId),
+            contact_payment_id: cpRow.id,
+            document_type: "invoice",
+            document_id: args.invoice.id,
+            allocated_amount: cappedAmount,
+          });
+        }
+      }
 
       // Auto-allocate any leftover (or this same payment) to oldest unpaid invoices for the same customer
       try {

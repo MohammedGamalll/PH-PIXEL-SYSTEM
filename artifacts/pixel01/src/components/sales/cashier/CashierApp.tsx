@@ -32,6 +32,8 @@ import { playAdd, playSuccess } from "@/lib/sounds";
 import { useCurrentEmployee } from "@/hooks/use-current-employee";
 import { useCan } from "@/lib/can";
 import { useOwnerId } from "@/lib/owner";
+import { computeProductBatches } from "@/lib/product-batches";
+import { useRecalcProductStock } from "@/hooks/use-recalc-stock";
 import { getQuickItemIds } from "@/lib/quick-items";
 
 type CartItem = {
@@ -80,6 +82,7 @@ const formatBalance = (val: number) => {
 
 export function CashierApp({ sessionId }: Props) {
   const { t, dir, lang } = useI18n();
+  useRecalcProductStock();
   const navigate = useNavigate();
   const { user } = useAuth();
   const { data: customers = [] } = useContacts("customer");
@@ -137,6 +140,7 @@ export function CashierApp({ sessionId }: Props) {
   const [productsRaw, setProductsRaw] = useState<any[]>([]);
   const [quickItemIds, setQuickItemIds] = useState<string[]>([]);
   const [stockRefreshKey, setStockRefreshKey] = useState(0);
+  const [batchStockMap, setBatchStockMap] = useState<Record<string, Record<string, number>>>({});
   useEffect(() => {
     if (!user) return;
     (async () => {
@@ -316,8 +320,18 @@ export function CashierApp({ sessionId }: Props) {
     return Number(((Number(p.price) || 0) * (perLevel / perMain)).toFixed(2));
   };
 
+  const stockLimitFor = (p: any, expiry: string | null | undefined) => {
+    const map = batchStockMap[p.id];
+    if (expiry && map?.[expiry] != null) return map[expiry];
+    if (map && Object.keys(map).length > 0) {
+      return Object.values(map).reduce((s, v) => s + v, 0);
+    }
+    return Number(p.stock || 0);
+  };
+
   const addProductWithExpiry = (p: any, expiry: string | null) => {
-    if (Number(p.stock || 0) <= 0) {
+    const stockBase = stockLimitFor(p, expiry);
+    if (stockBase <= 0) {
       toast.error(t("sales.cashier.toast.no_stock"));
       return;
     }
@@ -334,7 +348,7 @@ export function CashierApp({ sessionId }: Props) {
       .reduce((s, c) => s + toBase(c.quantity, c.unitLevel, c.product), 0);
     const proposedQty = (existing?.quantity ?? 0) + 1;
     const proposedBase = otherRowsBase + toBase(proposedQty, main.level, p);
-    if (proposedBase > Number(p.stock || 0)) {
+    if (proposedBase > stockBase) {
       toast.error(t("sales.cashier.toast.over_stock"));
       return;
     }
@@ -369,56 +383,15 @@ export function CashierApp({ sessionId }: Props) {
   };
 
   const addProduct = async (p: any) => {
-    // Detect batches by actual stock movement records (purchases + incoming
-    // branch transfers, less sales and outgoing transfers), so multi-batch
-    // products without has_expiry still trigger picker / FEFO.
     const today = new Date().toISOString().slice(0, 10);
-    const [piRes, iiRes, btInRes, btOutRes] = await Promise.all([
-      (supabase.from("purchase_items") as any)
-        .select("expiry_date, base_quantity, quantity")
-        .eq("product_id", p.id)
-        .not("expiry_date", "is", null)
-        .gte("expiry_date", today),
-      (supabase.from("invoice_items") as any)
-        .select("expiry_date, base_quantity, quantity")
-        .eq("product_id", p.id)
-        .not("expiry_date", "is", null),
-      (supabase.from("inventory_branch_transfer_items") as any)
-        .select("expiry_date, base_quantity, quantity")
-        .eq("target_product_id", p.id)
-        .not("expiry_date", "is", null)
-        .gte("expiry_date", today),
-      (supabase.from("inventory_branch_transfer_items") as any)
-        .select("expiry_date, base_quantity, quantity")
-        .eq("source_product_id", p.id)
-        .not("expiry_date", "is", null),
-    ]);
-    const perDate = new Map<string, number>();
-    ((piRes.data as any[]) || []).forEach((r) => {
-      const q = Number(r.base_quantity ?? r.quantity ?? 0);
-      perDate.set(r.expiry_date, (perDate.get(r.expiry_date) || 0) + q);
-    });
-    ((btInRes.data as any[]) || []).forEach((r) => {
-      const q = Number(r.base_quantity ?? r.quantity ?? 0);
-      perDate.set(r.expiry_date, (perDate.get(r.expiry_date) || 0) + q);
-    });
-    ((iiRes.data as any[]) || []).forEach((r) => {
-      const q = Math.abs(Number(r.base_quantity ?? r.quantity ?? 0));
-      if (perDate.has(r.expiry_date)) {
-        perDate.set(r.expiry_date, (perDate.get(r.expiry_date) || 0) - q);
-      }
-    });
-    ((btOutRes.data as any[]) || []).forEach((r) => {
-      const q = Number(r.base_quantity ?? r.quantity ?? 0);
-      if (perDate.has(r.expiry_date)) {
-        perDate.set(r.expiry_date, (perDate.get(r.expiry_date) || 0) - q);
-      }
-    });
+    const batches = await computeProductBatches(p.id);
+    const valid = batches.filter(
+      (b) => b.expiry_date && b.remaining > 0 && b.expiry_date >= today,
+    );
+    const batchMap = Object.fromEntries(valid.map((b) => [b.expiry_date, b.remaining]));
+    setBatchStockMap((prev) => ({ ...prev, [p.id]: batchMap }));
 
-    const available = Array.from(perDate.entries())
-      .filter(([, rem]) => rem > 0)
-      .map(([d]) => d)
-      .sort();
+    const available = valid.map((b) => b.expiry_date).sort();
 
     if (available.length === 1) {
       addProductWithExpiry(p, available[0]);
@@ -428,8 +401,8 @@ export function CashierApp({ sessionId }: Props) {
       setExpiryFor(p);
       return;
     }
-    // No active batches with expiry — block products marked has_expiry.
-    if (p?.has_expiry === true) {
+    const hasExpiryStock = batches.some((b) => b.expiry_date && b.remaining > 0);
+    if (hasExpiryStock || p?.has_expiry === true) {
       setWin7Error(`المنتج «${p.name}» لا توجد له دفعات صلاحية سارية — لا يمكن بيعه.`);
       return;
     }
@@ -509,7 +482,7 @@ export function CashierApp({ sessionId }: Props) {
     }
     setCart((c) => c.map((x) => {
       if (x.key !== key) return x;
-      const stockBase = Number(x.product.stock || 0);
+      const stockBase = stockLimitFor(x.product, x.expiryDate);
       const otherRowsBase = c
         .filter((r) => r.product.id === x.product.id && r.key !== key)
         .reduce((s, r) => s + toBase(r.quantity, r.unitLevel, r.product), 0);
@@ -531,7 +504,7 @@ export function CashierApp({ sessionId }: Props) {
         const next = opts.find((o) => o.level === level);
         if (!next) return x;
 
-        const stockBase = Number(x.product.stock || 0);
+        const stockBase = stockLimitFor(x.product, x.expiryDate);
         const otherRowsBase = c
           .filter((r) => r.product.id === x.product.id && r.key !== key)
           .reduce((s, r) => s + toBase(r.quantity, r.unitLevel, r.product), 0);
@@ -1127,7 +1100,7 @@ export function CashierApp({ sessionId }: Props) {
                         </button>
                         <span title={row.description} style={{ textAlign: dir === "rtl" ? "right" : "left", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.description}</span>
                         <span title="المتاح" style={{ fontSize: 10, color: "#16a34a", fontWeight: 700, flexShrink: 0 }}>
-                          ({formatBaseQuantity(Number(row.product?.stock || 0), row.product)})
+                          ({formatBaseQuantity(stockLimitFor(row.product, row.expiryDate), row.product)})
                         </span>
                       </div>
                       {row.expiryDate && (

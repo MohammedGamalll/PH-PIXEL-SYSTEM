@@ -7,6 +7,7 @@ import type { ColumnDef } from "@/components/products/TableToolbar";
 import { usePurchases } from "@/hooks/use-purchases";
 import { useContacts } from "@/hooks/use-contacts";
 import { useI18n } from "@/lib/i18n";
+import { formatDateTime } from "@/lib/format";
 import { PurchaseDetailsModal } from "@/components/purchases/PurchaseDetailsModal";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -130,7 +131,7 @@ function PaymentsReportPage() {
           id: p.id,
           _raw: p,
           ref: p.ref_no || p.purchase_number || t("reports.dash"),
-          paid_on: p.purchase_date ? new Date(p.purchase_date).toLocaleDateString(locale) : t("reports.dash"),
+          paid_on: p.created_at ? formatDateTime(p.created_at) : (p.purchase_date ? formatDateTime(p.purchase_date) : t("reports.dash")),
           _date: p.purchase_date ? String(p.purchase_date).slice(0, 10) : "",
           paid_amount: Number(p.paid_amount || 0),
           supplier: p.supplier_id ? supMap.get(p.supplier_id) || t("reports.dash") : t("reports.dash"),

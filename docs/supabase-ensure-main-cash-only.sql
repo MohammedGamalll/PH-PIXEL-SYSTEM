@@ -1,0 +1,38 @@
+-- Documentation only: restrict ensure_system_accounts to seed main cash treasury.
+--
+-- Goal: when ensure_system_accounts runs (e.g. on new owner signup), create ONLY
+-- the default main-cash account/treasury — not every legacy account type.
+--
+-- Suggested migration approach (apply in Supabase SQL editor when ready):
+--
+-- 1. Locate the existing function:
+--      SELECT pg_get_functiondef(oid) FROM pg_proc WHERE proname = 'ensure_system_accounts';
+--
+-- 2. Replace its body so it:
+--    - Inserts/upserts a single cash-equivalent account (is_default_cash = true)
+--    - Links one treasury row to that account
+--    - Skips seeding bank, card, AR/AP placeholder accounts that duplicate cashier flow
+--
+-- 3. Example shape (adapt names/columns to your live function):
+--
+--    CREATE OR REPLACE FUNCTION public.ensure_system_accounts(_owner uuid)
+--    RETURNS void
+--    LANGUAGE plpgsql
+--    SECURITY DEFINER
+--    SET search_path = public
+--    AS $$
+--    BEGIN
+--      INSERT INTO accounts (owner_id, name, account_type, account_number, is_cash_equivalent, is_default_cash)
+--      VALUES (_owner, 'الخزنة الرئيسية', 'Asset', 'CASH-001', true, true)
+--      ON CONFLICT DO NOTHING;
+--
+--      INSERT INTO treasuries (owner_id, name, account_id, is_default)
+--      SELECT _owner, 'الخزنة الرئيسية', a.id, true
+--      FROM accounts a
+--      WHERE a.owner_id = _owner AND a.is_default_cash = true
+--      LIMIT 1
+--      ON CONFLICT DO NOTHING;
+--    END;
+--    $$;
+--
+-- 4. After deploy: verify new owners get exactly one default cash treasury.

@@ -116,6 +116,35 @@ export function formatBaseQuantity(stockInBase: number, p: ProductUnitTree): str
   return parts.join(" + ");
 }
 
+/**
+ * Display a base-unit quantity as a single main-unit value with the main unit name.
+ * Used in inventory count details and expiry reports where composite breakdown is not wanted.
+ */
+export function formatMainQuantity(
+  stockInBase: number,
+  p: ProductUnitTree,
+  opts?: { signed?: boolean },
+): string {
+  const raw = Number(stockInBase) || 0;
+  const main = toMainUnits(Math.abs(raw), p);
+  const unit = p.main_unit || baseUnitName(p);
+  const n = Number.isInteger(main) ? String(main) : main.toFixed(2);
+  const sign = opts?.signed && raw > 0 ? "+" : opts?.signed && raw < 0 ? "-" : "";
+  return `${sign}${n} ${unit}`;
+}
+
+/** Monetary variance value: cost is per main unit, variance qty is in base units. */
+export function varianceValueFromBase(
+  varianceInBase: number,
+  costPerMainUnit: number,
+  p: ProductUnitTree,
+): number {
+  const v = Number(varianceInBase) || 0;
+  if (v === 0) return 0;
+  const sign = v >= 0 ? 1 : -1;
+  return sign * toMainUnits(Math.abs(v), p) * Number(costPerMainUnit || 0);
+}
+
 /** Back-compat alias used by older imports. */
 export const formatStock = formatBaseQuantity;
 

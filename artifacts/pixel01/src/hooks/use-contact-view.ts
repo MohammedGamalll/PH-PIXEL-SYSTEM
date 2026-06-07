@@ -5,6 +5,22 @@ import { useOwnerId } from "@/lib/owner";
 import { requireOwnerId } from "@/lib/db-errors";
 import { toast } from "sonner";
 
+export function useContactPurchaseReturns(contactId: string | undefined) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ["contact-purchase-returns", contactId],
+    enabled: !!user && !!contactId,
+    queryFn: async () => {
+      const { data: purs } = await supabase.from("purchases").select("id").eq("supplier_id", contactId!);
+      const purIds = (purs ?? []).map((p: any) => p.id);
+      if (!purIds.length) return [];
+      const { data, error } = await supabase.from("purchase_returns").select("*").in("purchase_id", purIds);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+}
+
 export function useContactPurchases(contactId: string | undefined) {
   const { user } = useAuth();
   return useQuery({
@@ -78,6 +94,13 @@ export type ContactStockRow = {
   returned_qty: number;
   current_stock: number;
   stock_value: number;
+  unit_tree?: {
+    main_unit: string | null;
+    sub_unit_1: string | null;
+    sub_unit_1_ratio: number | null;
+    sub_unit_2: string | null;
+    sub_unit_2_ratio: number | null;
+  };
 };
 
 export function useContactPurchaseStock(contactId: string | undefined) {
@@ -95,7 +118,7 @@ export function useContactPurchaseStock(contactId: string | undefined) {
 
       const { data: items, error } = await supabase
         .from("purchase_items")
-        .select("product_id,description,quantity")
+        .select("product_id,description,quantity,base_quantity")
         .in("purchase_id", purIds);
       if (error) throw error;
 
@@ -112,7 +135,7 @@ export function useContactPurchaseStock(contactId: string | undefined) {
           current_stock: 0,
           stock_value: 0,
         };
-        v.purchased_qty += Number(it.quantity ?? 0);
+        v.purchased_qty += Number(it.base_quantity ?? it.quantity ?? 0);
         map.set(key, v);
       }
 
@@ -122,12 +145,12 @@ export function useContactPurchaseStock(contactId: string | undefined) {
 
       if (productIds.length) {
         const [prodsRes, retsRes, invRes] = await Promise.all([
-          supabase.from("products").select("id,name,sku,stock,cost").in("id", productIds),
+          supabase.from("products").select("id,name,sku,stock,cost,main_unit,sub_unit_1,sub_unit_1_ratio,sub_unit_2,sub_unit_2_ratio").in("id", productIds),
           supabase
             .from("purchase_return_items")
-            .select("product_id,quantity,purchase_returns!inner(purchase_id)")
+            .select("product_id,quantity,base_quantity,purchase_returns!inner(purchase_id)")
             .in("purchase_returns.purchase_id" as any, purIds),
-          supabase.from("invoice_items").select("product_id,quantity").in("product_id", productIds),
+          supabase.from("invoice_items").select("product_id,quantity,base_quantity").in("product_id", productIds),
         ]);
 
         for (const p of ((prodsRes.data ?? []) as any[])) {
@@ -137,17 +160,24 @@ export function useContactPurchaseStock(contactId: string | undefined) {
             v.sku = p.sku ?? "";
             v.current_stock = Number(p.stock ?? 0);
             v.stock_value = Number(p.stock ?? 0) * Number(p.cost ?? 0);
+            v.unit_tree = {
+              main_unit: p.main_unit ?? null,
+              sub_unit_1: p.sub_unit_1 ?? null,
+              sub_unit_1_ratio: p.sub_unit_1_ratio ?? null,
+              sub_unit_2: p.sub_unit_2 ?? null,
+              sub_unit_2_ratio: p.sub_unit_2_ratio ?? null,
+            };
           }
         }
         for (const r of ((retsRes.data ?? []) as any[])) {
           if (!r.product_id) continue;
           const v = map.get(r.product_id);
-          if (v) v.returned_qty += Number(r.quantity ?? 0);
+          if (v) v.returned_qty += Number(r.base_quantity ?? r.quantity ?? 0);
         }
         for (const s of ((invRes.data ?? []) as any[])) {
           if (!s.product_id) continue;
           const v = map.get(s.product_id);
-          if (v) v.sold_qty += Number(s.quantity ?? 0);
+          if (v) v.sold_qty += Number(s.base_quantity ?? s.quantity ?? 0);
         }
       }
 

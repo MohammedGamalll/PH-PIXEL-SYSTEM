@@ -55,6 +55,10 @@ export function useCreateExpense() {
   return useMutation({
     mutationFn: async (values: ExpenseInput) => {
       const description = values.reason?.slice(0, 200) || "مصروف";
+      const createdByName =
+        (user?.user_metadata as { full_name?: string } | undefined)?.full_name
+        || user?.email
+        || null;
       const { error } = await (supabase.from("expenses") as any).insert({
         ...values,
         description,
@@ -62,6 +66,7 @@ export function useCreateExpense() {
         owner_id: requireOwnerId(ownerId),
         warehouse_id: currentWarehouseId ?? null,
         created_by: user!.id,
+        created_by_name_snapshot: createdByName,
       });
       if (error) throw friendlyDbError(error);
     },

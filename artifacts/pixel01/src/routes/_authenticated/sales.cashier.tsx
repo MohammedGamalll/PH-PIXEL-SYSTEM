@@ -16,8 +16,19 @@ function CashierPage() {
   const { session } = Route.useSearch();
   const { data: sessions = [], isLoading } = useCashierSessions();
   if (isLoading) return null;
-  const active = session
-    ? sessions.find((s: any) => s.id === session)
+  const byId = session ? sessions.find((s: any) => s.id === session) : null;
+  if (session && byId?.status === "closed") {
+    return (
+      <div dir={dir} className="p-6 text-center text-sm" style={{ color: "#374151" }}>
+        {t("sales.session.closed_reopen") || "هذه الجلسة مغلقة."}{" "}
+        <Link to="/sales/cashier-session" className="text-blue-600 underline">
+          {t("sales.session.start_new")}
+        </Link>
+      </div>
+    );
+  }
+  const active = byId?.status === "open"
+    ? byId
     : sessions.find((s: any) => s.status === "open");
 
   if (!active) {

@@ -1,11 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useInvoiceItems, useInvoicePayments } from "@/hooks/use-invoices";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useI18n } from "@/lib/i18n";
-import { ReversePaymentModal } from "@/components/contacts/ReversePaymentModal";
-import { RotateCcw } from "lucide-react";
 import type { PrintMode } from "./PrintableInvoice";
 
 type Props = {
@@ -23,7 +21,6 @@ export function InvoiceDetailsModal({ open, onOpenChange, invoice, customerName,
   const { data: items = [] } = useInvoiceItems(invoice?.id);
   const { data: accounts = [] } = useAccounts();
   const { data: payments = [] } = useInvoicePayments(invoice?.id);
-  const [reverseTarget, setReverseTarget] = useState<any | null>(null);
   const cashboxName = useMemo(() => {
     if (!invoice?.payment_account_id) return "";
     const a = (accounts as any[]).find((x) => x.id === invoice.payment_account_id);
@@ -99,12 +96,12 @@ export function InvoiceDetailsModal({ open, onOpenChange, invoice, customerName,
                 <tr>
                   <th style={head}>#</th><th style={head}>{t("sales.cols.date")}</th><th style={head}>الرقم المرجعي</th>
                   <th style={head}>{t("sales.details.paid_amount")}</th><th style={head}>{t("sales.cols.payment_method")}</th>
-                  <th style={head}>الحالة</th><th style={head}>إجراءات</th>
+                  <th style={head}>الحالة</th>
                 </tr>
               </thead>
               <tbody>
                 {(payments as any[]).length === 0 ? (
-                  <tr><td colSpan={7} style={{ ...cell, textAlign: "center" }}>{t("sales.details.no_records")}</td></tr>
+                  <tr><td colSpan={6} style={{ ...cell, textAlign: "center" }}>{t("sales.details.no_records")}</td></tr>
                 ) : (payments as any[]).map((p: any, i: number) => {
                   const isRev = p.is_reversal === true;
                   const reversedAmt = Number(p.reversed_amount ?? 0);
@@ -124,14 +121,6 @@ export function InvoiceDetailsModal({ open, onOpenChange, invoice, customerName,
                           : partiallyReversed ? <span style={{ background: "#fde68a", color: "#92400e", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>جزئية ({reversedAmt.toFixed(2)})</span>
                           : isRev ? <span style={{ background: "#fef3c7", color: "#92400e", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>قيد عكسي</span>
                           : <span style={{ background: "#f3f4f6", color: "#374151", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>مسجلة</span>}
-                      </td>
-                      <td style={cell}>
-                        {!isRev && !fullyReversed ? (
-                          <button onClick={() => setReverseTarget(p)} title="عكس الدفعة"
-                            style={{ background: "#fff", color: "#dc2626", border: "1px solid #fca5a5", borderRadius: 4, padding: "4px 8px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12 }}>
-                            <RotateCcw className="h-3 w-3" /> عكس
-                          </button>
-                        ) : "—"}
                       </td>
                     </tr>
                   );
@@ -164,16 +153,6 @@ export function InvoiceDetailsModal({ open, onOpenChange, invoice, customerName,
           <Button onClick={() => onPrint("packaging")} className="bg-green-500 hover:bg-green-600" style={{ margin: 4, backgroundColor: "#22c55e", color: "#ffffff" }}>{t("sales.actions.packaging")}</Button>
         </DialogFooter>
       </DialogContent>
-      <ReversePaymentModal
-        open={!!reverseTarget}
-        onClose={() => setReverseTarget(null)}
-        transaction={reverseTarget && reverseTarget.source !== "contact_payment" ? reverseTarget : null}
-        payment={reverseTarget && reverseTarget.source === "contact_payment" ? reverseTarget : null}
-        targetDocumentId={invoice?.id ?? null}
-        targetDocumentLabel={`الفاتورة #${invoice.invoice_number}`}
-        contactId={invoice.customer_id ?? null}
-        contactScope="customer"
-      />
     </Dialog>
   );
 }

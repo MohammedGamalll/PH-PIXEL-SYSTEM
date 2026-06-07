@@ -2539,6 +2539,7 @@ export type Database = {
           reversed_amount: number
           reversed_at: string | null
           reversed_by_transaction_id: string | null
+          session_id: string | null
           transaction_date: string
           treasury_id: string
           type: string
@@ -2556,6 +2557,7 @@ export type Database = {
           reversed_amount?: number
           reversed_at?: string | null
           reversed_by_transaction_id?: string | null
+          session_id?: string | null
           transaction_date?: string
           treasury_id: string
           type: string
@@ -2573,6 +2575,7 @@ export type Database = {
           reversed_amount?: number
           reversed_at?: string | null
           reversed_by_transaction_id?: string | null
+          session_id?: string | null
           transaction_date?: string
           treasury_id?: string
           type?: string

@@ -4,7 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import { Search, Trash2 } from "lucide-react";
-import { unitOptions, toBase, toMainUnits, formatBaseQuantity, type UnitLevel, type ProductUnitTree } from "@/lib/units";
+import { unitOptions, toBase, toMainUnits, formatBaseQuantity, baseUnitsPer, type UnitLevel, type ProductUnitTree } from "@/lib/units";
+import { priceForUnitLevel } from "@/lib/stock-display";
 import { normalizeArabicText } from "@/lib/arabic";
 import { SelectExpiryDateModal } from "@/components/sales/cashier/SelectExpiryDateModal";
 import { KeyboardHints } from "@/components/shared/KeyboardHints";
@@ -63,10 +64,9 @@ export function SalesItemsTable({
   };
 
   useEffect(() => {
-    if (autoFocus) {
-      const id = window.setTimeout(() => localRef.current?.focus(), 0);
-      return () => window.clearTimeout(id);
-    }
+    if (!autoFocus) return;
+    const id = window.setTimeout(() => localRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
   }, [autoFocus]);
 
 
@@ -103,14 +103,15 @@ export function SalesItemsTable({
       sub_unit_2: p.sub_unit_2, sub_unit_2_ratio: p.sub_unit_2_ratio,
     };
     const basePrice = Number(p.price ?? 0);
+    const unitPrice = priceForUnitLevel(p, first.level, baseUnitsPer);
     return {
       product_id: p.id,
       description: p.name,
       quantity: 1,
       base_price: basePrice,
-      unit_price: basePrice * (first.ratio || 1),
+      unit_price: unitPrice,
       discount_amount: 0,
-      total: basePrice * (first.ratio || 1),
+      total: unitPrice,
       unit_level: first.level,
       unit_name: first.name,
       base_factor: first.ratio,
@@ -212,7 +213,9 @@ export function SalesItemsTable({
     const r = rows[i];
     const choice = r.unit_choices.find((c) => c.level === level);
     if (!choice) return;
-    const newPrice = (r.base_price || r.unit_price) * (choice.ratio || 1);
+    const newPrice = r.product_units
+      ? priceForUnitLevel({ ...r.product_units, price: r.base_price || r.unit_price }, level, baseUnitsPer)
+      : (r.base_price || r.unit_price) * (choice.ratio || 1);
     update(i, { unit_level: level, unit_name: choice.name, base_factor: choice.ratio, unit_price: newPrice });
   };
 
@@ -296,7 +299,7 @@ export function SalesItemsTable({
                 style={{ backgroundColor: idx === activeIndex ? "#eff6ff" : "transparent" }}
               >
                 <div style={{ color: "#111827", fontWeight: 600 }}>{p.name}{p.name_en ? ` — ${p.name_en}` : ""}</div>
-                <div className="text-xs" style={{ color: "#6b7280" }}>{p.sku || "—"} • {t("sales.items.price")} {Number(p.price ?? 0).toFixed(2)}</div>
+                <div className="text-xs" style={{ color: "#6b7280" }}>{p.sku || "—"} • {t("sales.items.price")} {Number(p.price ?? 0).toFixed(2)} • مخزون: {formatBaseQuantity(Number(p.stock ?? 0), p)}</div>
               </button>
             ))}
           </div>

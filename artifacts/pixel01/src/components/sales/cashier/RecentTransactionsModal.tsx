@@ -6,6 +6,11 @@ import { th, td } from "./win7";
 import { useI18n } from "@/lib/i18n";
 import { useContacts } from "@/hooks/use-contacts";
 import { useConvertSaleToCredit, useInvoiceItems } from "@/hooks/use-invoices";
+import {
+  fetchSessionContactPayments,
+  fetchSessionStandaloneReturns,
+  mergeSessionTransactionRows,
+} from "@/lib/cashier-session-data";
 import { ReceiptPrintable } from "./ReceiptPrintable";
 import { Printer, ArrowRightLeft, Pencil } from "lucide-react";
 
@@ -30,55 +35,28 @@ export function RecentTransactionsModal({ sessionId, onClose }: Props) {
   const { data: printItems = [] } = useInvoiceItems(printingId || undefined);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
-      const [{ data }, { data: cps }, { data: stdRets }] = await Promise.all([
-        (supabase.from("invoices") as any)
+      try {
+        const { data, error: invErr } = await (supabase.from("invoices") as any)
           .select("id, invoice_number, created_at, total, paid_amount, payment_method, type, payment_status, customer_id, issue_date, subtotal, tax, discount, shipping_cost")
           .eq("session_id", sessionId)
           .order("created_at", { ascending: false })
-          .limit(50),
-        (supabase.from("contact_payments") as any)
-          .select("id, amount, direction, contact_type, contact_id, payment_method, ref_no, created_at")
-          .eq("session_id", sessionId)
-          .order("created_at", { ascending: false })
-          .limit(50),
-        (supabase.from("standalone_returns" as any) as any)
-          .select("id, reference_no, return_type, total_amount, reason, created_at")
-          .eq("session_id", sessionId)
-          .order("created_at", { ascending: false })
-          .limit(50),
-      ]);
-      const cpRows = (cps ?? []).map((p: any) => ({
-        id: p.id,
-        invoice_number: p.ref_no || (p.direction === "in" ? "دفعة عميل" : "دفعة مورد"),
-        created_at: p.created_at,
-        total: Number(p.amount || 0),
-        payment_method: p.payment_method || "cash",
-        type: p.direction === "in" ? "customer_payment" : "supplier_payment",
-        payment_status: "paid",
-        customer_id: p.contact_type === "customer" ? p.contact_id : null,
-        contact_id: p.contact_id,
-        contact_type: p.contact_type,
-        __isPayment: true,
-      }));
-      const stdRetRows = (stdRets ?? []).map((r: any) => ({
-        id: r.id,
-        invoice_number: r.reference_no || "مرتجع حر",
-        created_at: r.created_at,
-        total: Number(r.total_amount || 0),
-        payment_method: "cash",
-        type: "standalone_return",
-        payment_status: "paid",
-        customer_id: null,
-        return_type: r.return_type,
-        reason: r.reason,
-        __isStandaloneReturn: true,
-      }));
-      const merged = [...(data ?? []), ...cpRows, ...stdRetRows].sort(
-        (a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-      );
-      setRows(merged);
+          .limit(50);
+
+        if (invErr) console.warn("RecentTransactionsModal invoices:", invErr.message);
+
+        const stdReturns = await fetchSessionStandaloneReturns(sessionId);
+        const { payments } = await fetchSessionContactPayments(sessionId, stdReturns);
+        if (!cancelled) {
+          setRows(mergeSessionTransactionRows(data ?? [], payments, stdReturns));
+        }
+      } catch (e) {
+        console.error("RecentTransactionsModal load:", e);
+        if (!cancelled) setRows([]);
+      }
     })();
+    return () => { cancelled = true; };
   }, [sessionId, reloadTick]);
 
   // Trigger window.print when items have loaded for the chosen invoice

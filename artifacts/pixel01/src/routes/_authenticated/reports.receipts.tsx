@@ -12,6 +12,7 @@ import type { ColumnDef } from "@/components/products/TableToolbar";
 import { useContacts } from "@/hooks/use-contacts";
 import { useCustomerGroups } from "@/hooks/use-customer-groups";
 import { useI18n } from "@/lib/i18n";
+import { formatDateTime } from "@/lib/format";
 
 
 export const Route = createFileRoute("/_authenticated/reports/receipts")({
@@ -104,7 +105,7 @@ function ReceiptsReportPage() {
         return {
           id: i.id,
           ref: i.invoice_number || t("reports.dash"),
-          paid_on: i.issue_date ? new Date(i.issue_date).toLocaleDateString(locale) : t("reports.dash"),
+          paid_on: i.created_at ? formatDateTime(i.created_at) : (i.issue_date ? formatDateTime(i.issue_date) : t("reports.dash")),
           _date: i.issue_date ? String(i.issue_date).slice(0, 10) : "",
           paid_amount: Number(i.paid_amount || i.total || 0),
           customer: customerName,

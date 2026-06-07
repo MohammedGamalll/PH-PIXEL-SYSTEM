@@ -13,6 +13,8 @@ import { Save, CheckCircle2, Printer, X, Trash2, Search } from "lucide-react";
 import { z } from "zod";
 import {
   formatBaseQuantity,
+  formatMainQuantity,
+  varianceValueFromBase,
   baseUnitName,
   baseUnitsPer,
   type ProductUnitTree,
@@ -26,7 +28,7 @@ type Row = {
   product_name: string;
   sku: string;
   system_qty: number; // base units (per-batch)
-  cost_at_time: number; // per base unit
+  cost_at_time: number; // per main unit (matches products.cost)
   expiry_date: string;
   original_expiry_date: string; // remembers the loaded expiry so edits propagate to the right batch
   // physical qty split per unit level — all stored as input strings, converted to base on save
@@ -267,7 +269,7 @@ export function CountForm({
           product_name: it.products?.name || "—",
           sku: it.products?.sku || "",
           system_qty: Number(it.system_qty || 0),
-          cost_at_time: Number(it.cost_at_time || 0),
+          cost_at_time: Number(it.products?.cost ?? it.cost_at_time ?? 0),
           expiry_date: exp,
           original_expiry_date: it.original_expiry_date || (it.is_new_batch ? "" : exp),
           phys_main: Number(it.physical_qty || 0) > 0 ? split.main : "",
@@ -379,7 +381,7 @@ export function CountForm({
       if (!rowHasPhysicalInput(r)) continue;
       const v = baseVarianceForRow(r);
       qty += v;
-      val += v * r.cost_at_time;
+      val += varianceValueFromBase(v, r.cost_at_time, r.unit_tree);
       const key = r.product_id;
       const g = groups.get(key);
       if (g) g.base += v;
@@ -446,6 +448,11 @@ export function CountForm({
       if (initial?.status === "approved") {
         const { error: usErr } = await (supabase as any).rpc("unsettle_stock_adjustment", { _adj_id: id });
         if (usErr) throw usErr;
+        const { error: draftErr } = await supabase
+          .from("stock_adjustments" as any)
+          .update({ status: "draft" } as any)
+          .eq("id", id);
+        if (draftErr) throw draftErr;
       }
       const { error: upErr } = await supabase
         .from("stock_adjustments" as any)
@@ -459,15 +466,22 @@ export function CountForm({
 
     await supabase.from("stock_adjustment_items" as any).delete().eq("adjustment_id", id!);
     if (rows.length) {
-      const payload = rows.map((r) => ({
-        adjustment_id: id, owner_id: ownerId, product_id: r.product_id,
-        expiry_date: r.expiry_date || null,
-        original_expiry_date: r.original_expiry_date || null,
-        is_new_batch: r.is_new_batch,
-        system_qty: r.system_qty,
-        physical_qty: rowHasPhysicalInput(r) ? physBaseFromRow(r) : 0,
-        cost_at_time: r.cost_at_time,
-      }));
+      const payload = rows.map((r) => {
+        const physBase = rowHasPhysicalInput(r) ? physBaseFromRow(r) : 0;
+        const variance = baseVarianceForRow(r);
+        const costMain = r.cost_at_time;
+        return {
+          adjustment_id: id, owner_id: ownerId, product_id: r.product_id,
+          expiry_date: r.expiry_date || null,
+          original_expiry_date: r.original_expiry_date || null,
+          is_new_batch: r.is_new_batch,
+          system_qty: r.system_qty,
+          physical_qty: physBase,
+          cost_at_time: costMain,
+          variance_qty: rowHasPhysicalInput(r) ? variance : 0,
+          variance_value: rowHasPhysicalInput(r) ? varianceValueFromBase(variance, costMain, r.unit_tree) : 0,
+        };
+      });
       const { error: itemsErr } = await supabase.from("stock_adjustment_items" as any).insert(payload as any);
       if (itemsErr) throw itemsErr;
     }
@@ -476,6 +490,21 @@ export function CountForm({
       const { error: apErr } = await supabase
         .from("stock_adjustments" as any).update({ status: "approved" } as any).eq("id", id!);
       if (apErr) throw apErr;
+      const { error: recalcErr } = await (supabase as any).rpc("recalc_product_stock");
+      if (recalcErr) console.warn("recalc_product_stock failed:", recalcErr.message);
+      const { error: settleErr } = await (supabase as any).rpc("settle_stock_adjustment", { _adj_id: id! });
+      if (settleErr) {
+        const msg = String(settleErr.message || "");
+        const msgLower = msg.toLowerCase();
+        if (msgLower.includes("pws_stock_nonneg")) {
+          await supabase.from("stock_adjustments" as any).update({ status: "draft" } as any).eq("id", id!);
+          throw new Error(isAr ? "الفرق يجعل رصيد المخزن سالباً — راجع الكميات الفعلية" : "Variance would make warehouse stock negative — review physical quantities");
+        }
+        if (!msgLower.includes("already") && !msgLower.includes("settled") && !msgLower.includes("معتمد")) {
+          await supabase.from("stock_adjustments" as any).update({ status: "draft" } as any).eq("id", id!);
+          throw settleErr;
+        }
+      }
     }
     return id!;
   };
@@ -492,7 +521,7 @@ export function CountForm({
     } catch (e: any) { toast.error(e.message); } finally { setSaving(false); }
   };
   const onApprove = async () => {
-    if (readOnly) return;
+    if (readOnly || saving || submittedRef.current) return;
     if (!confirm(isAr ? "اعتماد الجرد وتسوية المخزون والقيود؟" : "Approve and settle?")) return;
     setSaving(true);
     try {
@@ -501,7 +530,17 @@ export function CountForm({
       toast.success(isAr ? "تم الاعتماد والتسوية" : "Approved & settled");
       qc.invalidateQueries({ queryKey: ["stock_adjustments"] });
       navigate({ to: "/inventory-count" });
-    } catch (e: any) { toast.error(e.message); } finally { setSaving(false); }
+    } catch (e: any) {
+      const msg = String(e.message || "").toLowerCase();
+      if (msg.includes("already") || msg.includes("settled") || msg.includes("معتمد")) {
+        submittedRef.current = true;
+        toast.success(isAr ? "تم الاعتماد والتسوية" : "Approved & settled");
+        qc.invalidateQueries({ queryKey: ["stock_adjustments"] });
+        navigate({ to: "/inventory-count" });
+        return;
+      }
+      toast.error(e.message);
+    } finally { setSaving(false); }
   };
 
   const onPrintEmpty = () => printSheet({ rows, refNo, countDate, isAr, filled: false, settings });
@@ -675,16 +714,16 @@ export function CountForm({
                   {isAr ? "ابحث عن صنف أو اضغط «تحميل الأصناف» للبدء" : "Search for a product or click \"Load products\" to begin"}
                 </td></tr>
               ) : rows.map((r, idx) => {
-                const variance = baseVarianceForRow(r);
-                const value = variance * r.cost_at_time;
                 const tree = r.unit_tree;
+                const variance = baseVarianceForRow(r);
+                const value = varianceValueFromBase(variance, r.cost_at_time, tree);
                 const hasInput = rowHasPhysicalInput(r);
-                const systemDisplay = r.is_new_batch ? "—" : formatBaseQuantity(r.system_qty, tree);
+                const systemDisplay = r.is_new_batch ? "—" : formatMainQuantity(r.system_qty, tree);
                 const varianceDisplay = !hasInput
                   ? "—"
-                  : (variance === 0 ? "0" : (variance > 0 ? "+" : "-") + formatBaseQuantity(Math.abs(variance), tree));
+                  : variance === 0 ? formatMainQuantity(0, tree) : (variance > 0 ? "+" : "-") + formatMainQuantity(Math.abs(variance), tree);
                 const physBase = physBaseFromRow(r);
-                const physDisplay = !hasInput ? "—" : formatBaseQuantity(physBase, tree);
+                const physDisplay = !hasInput ? "—" : formatMainQuantity(physBase, tree);
                 return (
                   <tr key={r.key} className={r.is_new_batch ? "bg-blue-50/50" : ""}>
                     <td style={cellStyle}>{idx + 1}</td>
@@ -706,9 +745,6 @@ export function CountForm({
                     <td style={cellStyle} className="text-gray-500">{r.sku || "—"}</td>
                     <td style={cellStyle}>
                       <span className="font-medium">{systemDisplay}</span>
-                      {!r.is_new_batch && (tree.main_unit || tree.sub_unit_1) && (
-                        <div className="text-[11px] text-gray-400">({r.system_qty} {baseUnitName(tree)})</div>
-                      )}
                     </td>
                     <td style={cellStyle}>
                       <input type="text" value={r.expiry_date}
@@ -762,7 +798,7 @@ export function CountForm({
                       )}
                     </td>
                     <td style={cellStyle}>
-                      <div className="text-sm">{formatCurrency(r.cost_at_time * baseUnitsPer(tree, "main"), settings)}</div>
+                      <div className="text-sm">{formatCurrency(r.cost_at_time, settings)}</div>
                       <div className="text-[11px] text-gray-400">{isAr ? `لكل ${tree.main_unit || baseUnitName(tree)}` : `per ${tree.main_unit || baseUnitName(tree)}`}</div>
                     </td>
 
@@ -859,17 +895,17 @@ function printSheet({
           const hasInput = rowHasPhysicalInput(r);
           const physBase = hasInput ? physBaseFromRow(r) : 0;
           const variance = physBase - (r.is_new_batch ? 0 : r.system_qty);
-          const value = variance * r.cost_at_time;
+          const value = varianceValueFromBase(variance, r.cost_at_time, r.unit_tree);
           const cls = variance < 0 ? "neg" : variance > 0 ? "pos" : "";
-          const systemDisp = r.is_new_batch ? "—" : escape_(formatBaseQuantity(r.system_qty, r.unit_tree));
-          const physDisp = !filled || !hasInput ? "" : escape_(formatBaseQuantity(physBase, r.unit_tree));
-          const varDisp = variance === 0 ? "0" : (variance > 0 ? "+" : "-") + escape_(formatBaseQuantity(Math.abs(variance), r.unit_tree));
+          const systemDisp = r.is_new_batch ? "—" : escape_(formatMainQuantity(r.system_qty, r.unit_tree));
+          const physDisp = !filled || !hasInput ? "" : escape_(formatMainQuantity(physBase, r.unit_tree));
+          const varDisp = variance === 0 ? formatMainQuantity(0, r.unit_tree) : (variance > 0 ? "+" : "-") + escape_(formatMainQuantity(Math.abs(variance), r.unit_tree));
           const tree = r.unit_tree;
           const unitLines: string[] = [];
           if (tree.main_unit && tree.sub_unit_1) unitLines.push(`1 ${tree.main_unit} = ${tree.sub_unit_1_ratio || 1} ${tree.sub_unit_1}`);
           if (tree.sub_unit_1 && tree.sub_unit_2) unitLines.push(`1 ${tree.sub_unit_1} = ${tree.sub_unit_2_ratio || 1} ${tree.sub_unit_2}`);
           const unitsHtml = unitLines.map(escape_).join("<br/>");
-          const costDisp = escape_(formatCurrency(r.cost_at_time * baseUnitsPer(tree, "main"), settings));
+          const costDisp = escape_(formatCurrency(r.cost_at_time, settings));
           return `<tr${filled ? "" : ' class="blank"'}>
             <td>${i + 1}</td>
             <td>${escape_(r.product_name)}${unitsHtml ? `<div class="units">${unitsHtml}</div>` : ""}</td>

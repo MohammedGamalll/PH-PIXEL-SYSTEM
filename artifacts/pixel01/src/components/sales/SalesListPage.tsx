@@ -30,6 +30,7 @@ import { useTableSort } from "@/components/shared/useTableSort";
 import { SortableHead } from "@/components/shared/SortableHead";
 import { useWarehouseContext } from "@/contexts/WarehouseContext";
 import { useCan } from "@/lib/can";
+import { printTableFromData } from "@/lib/print-table";
 
 type Confirm = { kind: "delete" | "convert" | "to_credit"; id: string; messageKey: string } | null;
 
@@ -246,11 +247,50 @@ export function SalesListPage({ mode }: { mode: InvoiceType }) {
     return r[key] ?? "";
   };
 
-  const exportHeaders = visible.filter((c) => c.key !== "opt").map((c) => c.label);
-  const exportRows = sorted.map((r) => visible.filter((c) => c.key !== "opt").map((c) => {
-    const v = cellFor(r, c.key);
-    return typeof v === "string" || typeof v === "number" ? String(v) : "";
-  }));
+  const textCellFor = (r: any, key: string): string => {
+    if (key === "customer") return custName(r.customer_id, r.customer_name_snapshot);
+    if (key === "phone") return custPhone(r.customer_id);
+    if (key === "payment_method") return r.payment_method === "cash" ? t("sales.pay.cash") : (r.payment_method || "—");
+    if (key === "payment_status") return STATUS_LABEL[r.payment_status] || "—";
+    if (key === "invoice_number") {
+      const rs = r.returned_status || "none";
+      const flag = rs === "full" ? ` (${t("sales.flags.full_return")})` : rs === "partial" ? ` (${t("sales.flags.partial_return")})` : "";
+      return `${r.invoice_number || ""}${flag}`;
+    }
+    if (key === "shipping_status") return SHIP_LABEL[r.shipping_status] || "—";
+    if (key === "total" || key === "paid_amount") return `${Number(r[key] ?? 0).toFixed(2)} ج.م`;
+    if (key === "due") return `${Math.max(0, Number(r.total || 0) - Number(r.paid_amount || 0)).toFixed(2)} ج.م`;
+    if (key === "qty") return Number(r._total_qty ?? 0).toFixed(2);
+    if (key === "issue_date") {
+      const datePart = r.issue_date ? String(r.issue_date).slice(0, 10) : "";
+      const timePart = r.created_at ? formatDateTime(r.created_at).slice(11) : "";
+      return [datePart, timePart].filter(Boolean).join(" ");
+    }
+    if (key === "added_by") return r.created_by ? (empMap[r.created_by] ?? r.created_by_name_snapshot ?? "—") : (r.created_by_name_snapshot ?? "—");
+    return String(r[key] ?? "");
+  };
+
+  const printCols = visible.filter((c) => c.key !== "opt");
+  const exportHeaders = printCols.map((c) => c.label);
+  const exportRows = sorted.map((r) => printCols.map((c) => textCellFor(r, c.key)));
+
+  const printFooter = printCols.map((c, i) => {
+    if (c.key === "total") return `${totalSum.toFixed(2)} ج.م`;
+    if (c.key === "paid_amount") return `${paidSum.toFixed(2)} ج.م`;
+    if (c.key === "due") return `${dueSum.toFixed(2)} ج.م`;
+    if (i === 0) return t("sales.report.total_label");
+    return "";
+  });
+
+  const handlePrintTable = () => {
+    printTableFromData({
+      title: titles.section,
+      subtitle: `${new Date().toLocaleString()} — ${totalRows} صف`,
+      headers: exportHeaders,
+      rows: exportRows,
+      footer: printFooter,
+    });
+  };
 
   const renderActions = (r: any) => (
     <DropdownMenu>
@@ -359,9 +399,14 @@ export function SalesListPage({ mode }: { mode: InvoiceType }) {
           onExportCsv={can(moduleKey, "print") ? () => exportToCsv(`${mode}.csv`, exportHeaders, exportRows) : undefined}
           onExportExcel={can(moduleKey, "print") ? () => exportToXls(`${mode}.xls`, exportHeaders, exportRows) : undefined}
           printRef={can(moduleKey, "print") ? printRef : undefined} printTitle={titles.section}
+          onPrint={can(moduleKey, "print") ? handlePrintTable : undefined}
           columns={cols} onToggleColumn={(k) => setCols((s) => s.map((c) => c.key === k ? { ...c, visible: !c.visible } : c))}
         />
-        <div className="overflow-x-auto rounded-md print-table-area" ref={tableRef} style={{ border: "1px solid #d1d5db" }}>
+        <div
+          className="overflow-x-auto rounded-md print-table-area"
+          ref={(el) => { tableRef.current = el; printRef.current = el; }}
+          style={{ border: "1px solid #d1d5db" }}
+        >
           <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
             <thead><SortableHead cols={visible} headStyle={headStyle} sort={sort} onSort={setSort} /></thead>
             <tbody>
@@ -377,7 +422,7 @@ export function SalesListPage({ mode }: { mode: InvoiceType }) {
                 return (
                 <tr key={r.id} style={trStyle} onClick={() => setSelectedIdx(rowIdx)}>
                   {visible.map((c) => c.key === "opt" ? (
-                    <td key={c.key} style={cellStyle}>{renderActions(r)}</td>
+                    <td key={c.key} style={cellStyle} data-print-hide="1">{renderActions(r)}</td>
                   ) : <td key={c.key} style={cellStyle}>{cellFor(r, c.key)}</td>)}
                 </tr>
                 );

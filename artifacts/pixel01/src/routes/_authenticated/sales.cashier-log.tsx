@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/products/PageHeader";
 import { DataCard } from "@/components/products/DataCard";
 import {
   useCashierSessions,
-  useCloseCashierSession,
   useInvoicesBySession,
   useInvoiceItems,
 } from "@/hooks/use-invoices";
@@ -13,6 +14,7 @@ import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { InvoiceDetailsModal } from "@/components/sales/InvoiceDetailsModal";
 import { PrintableInvoice, type PrintMode } from "@/components/sales/PrintableInvoice";
 import { useI18n } from "@/lib/i18n";
+import { fetchSessionStandaloneReturns } from "@/lib/cashier-session-data";
 
 export const Route = createFileRoute("/_authenticated/sales/cashier-log")({
   component: CashierLog,
@@ -24,8 +26,21 @@ const subCellBorder = { border: "1px solid #e5e7eb" } as const;
 function SessionInvoices({ sessionId, onView }: { sessionId: string; onView: (inv: any) => void }) {
   const { t, lang, dir } = useI18n();
   const { data: invoices = [], isLoading } = useInvoicesBySession(sessionId);
+  const { data: expenses = [] } = useQuery({
+    queryKey: ["session-expenses", sessionId],
+    queryFn: async () => {
+      const { data } = await (supabase.from("expenses") as any)
+        .select("id, ref_no, expense_date, amount, description, notes")
+        .ilike("notes", `%session:${sessionId}%`);
+      return data ?? [];
+    },
+  });
+  const { data: stdReturns = [] } = useQuery({
+    queryKey: ["session-standalone-returns", sessionId],
+    queryFn: () => fetchSessionStandaloneReturns(sessionId),
+  });
   if (isLoading) return <div className="p-3 text-xs text-gray-500">{t("sales.session.loading_invoices")}</div>;
-  if (invoices.length === 0)
+  if (invoices.length === 0 && expenses.length === 0 && stdReturns.length === 0)
     return <div className="p-3 text-xs text-gray-500">{t("sales.session.no_invoices")}</div>;
 
   const totalSales = invoices
@@ -90,6 +105,59 @@ function SessionInvoices({ sessionId, onView }: { sessionId: string; onView: (in
           })}
         </tbody>
       </table>
+
+      {expenses.length > 0 && (
+        <div className="mt-4">
+          <div className="text-xs font-bold mb-2" style={{ color: "#374151" }}>مصاريف الجلسة ({expenses.length})</div>
+          <table className="w-full text-xs" style={{ borderCollapse: "collapse", backgroundColor: "#fff" }}>
+            <thead style={{ backgroundColor: "#fef2f2" }}>
+              <tr>
+                {["#", "المرجع", "التاريخ", "المبلغ", "الوصف"].map((h, idx) => (
+                  <th key={idx} className="text-start p-2" style={subCellBorder}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {expenses.map((e: any, i: number) => (
+                <tr key={e.id}>
+                  <td className="p-2" style={subCellBorder}>{i + 1}</td>
+                  <td className="p-2" style={subCellBorder}>{e.ref_no || "—"}</td>
+                  <td className="p-2" style={subCellBorder}>{e.expense_date ? new Date(e.expense_date).toLocaleString(locale) : "—"}</td>
+                  <td className="p-2" style={subCellBorder}>{Number(e.amount || 0).toFixed(2)}</td>
+                  <td className="p-2" style={subCellBorder}>{e.description || e.notes || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {stdReturns.length > 0 && (
+        <div className="mt-4">
+          <div className="text-xs font-bold mb-2" style={{ color: "#374151" }}>مرتجعات حرة ({stdReturns.length})</div>
+          <table className="w-full text-xs" style={{ borderCollapse: "collapse", backgroundColor: "#fff" }}>
+            <thead style={{ backgroundColor: "#fef3c7" }}>
+              <tr>
+                {["#", "المرجع", "النوع", "التاريخ", "المبلغ", "السبب"].map((h, idx) => (
+                  <th key={idx} className="text-start p-2" style={subCellBorder}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {stdReturns.map((r: any, i: number) => (
+                <tr key={r.id}>
+                  <td className="p-2" style={subCellBorder}>{i + 1}</td>
+                  <td className="p-2" style={subCellBorder}>{r.reference_no}</td>
+                  <td className="p-2" style={subCellBorder}>{r.return_type === "sales" ? "مبيعات" : "مشتريات"}</td>
+                  <td className="p-2" style={subCellBorder}>{r.return_date ? new Date(r.return_date).toLocaleString(locale) : "—"}</td>
+                  <td className="p-2" style={subCellBorder}>{Number(r.total_amount || 0).toFixed(2)}</td>
+                  <td className="p-2" style={subCellBorder}>{r.reason || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -98,7 +166,6 @@ function CashierLog() {
   const { t, lang, dir } = useI18n();
   const { data: sessions = [], isLoading } = useCashierSessions();
   const { data: customers = [] } = useContacts("customer");
-  const close = useCloseCashierSession();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [viewing, setViewing] = useState<any | null>(null);
   const [printing, setPrinting] = useState<any | null>(null);

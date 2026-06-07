@@ -496,34 +496,29 @@ function ExpiringStockWidget() {
   const [months, setMonths] = useState(24);
   const printRef = useRef<HTMLDivElement>(null);
 
-  const { data: pwsMap = {} } = useProductStockForCurrentWarehouse();
-  const { data: itemsRaw = [], isLoading } = useQuery({
-    queryKey: ["expiring-stock", user?.id, months],
+  const { data: batches = [], isLoading } = useQuery({
+    queryKey: ["expiring-stock-batches-widget", user?.id],
     enabled: !!user,
     queryFn: async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const end = new Date();
-      end.setMonth(end.getMonth() + months);
-      const endStr = end.toISOString().slice(0, 10);
-      const { data, error } = await (supabase.from("products") as any)
-        .select("id, name, stock, expiry_date, unit, cost, price")
-        .not("expiry_date", "is", null)
-        .gte("expiry_date", today)
-        .lte("expiry_date", endStr)
-        .order("expiry_date", { ascending: true });
-      if (error) throw error;
-      return data ?? [];
+      const { fetchExpiringBatches } = await import("@/lib/expiring-batches");
+      return fetchExpiringBatches();
     },
   });
-  const items = useMemo(
-    () => (itemsRaw as any[]).map((p) => ({ ...p, stock: pwsMap[p.id] ?? 0 })),
-    [itemsRaw, pwsMap],
-  );
+
+  const items = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const end = new Date();
+    end.setMonth(end.getMonth() + months);
+    const endStr = end.toISOString().slice(0, 10);
+    return (batches as any[]).filter(
+      (b) => b.expiry >= today && b.expiry <= endStr,
+    ).sort((a, b) => a.expiry.localeCompare(b.expiry));
+  }, [batches, months]);
 
   const headers = ["#", isAr ? "الصنف" : "Product", isAr ? "المتبقي" : "Stock", isAr ? "تاريخ الانتهاء" : "Expiry", isAr ? "الأيام المتبقية" : "Days Left", isAr ? "سعر الشراء" : "Cost", isAr ? "سعر البيع" : "Price", isAr ? "الوحدة" : "Unit"];
   const rows = (items as any[]).map((p, i) => {
-    const days = Math.ceil((new Date(p.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    return [i + 1, p.name, p.stock, p.expiry_date, days, Number(p.cost || 0), Number(p.price || 0), p.unit || "—"];
+    const days = Math.ceil((new Date(p.expiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    return [i + 1, p.name, formatBaseQuantity(Number(p.quantity || 0), p), p.expiry, days, Number(p.cost || 0), Number(p.price || 0), p.unit || "—"];
   });
 
   return (
@@ -571,15 +566,15 @@ function ExpiringStockWidget() {
             </thead>
             <tbody>
               {(items as any[]).slice(0, 20).map((p: any, i: number) => {
-                const days = Math.ceil((new Date(p.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                const days = Math.ceil((new Date(p.expiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
                 const bg = days <= 30 ? "#fecaca" : days <= 60 ? "#fed7aa" : "#fef3c7";
                 const fg = days <= 30 ? "#991b1b" : days <= 60 ? "#9a3412" : "#92400e";
                 return (
                   <tr key={p.id}>
                     <td className="p-2" style={{ border: "1px solid #e5e7eb" }}>{i + 1}</td>
                     <td className="p-2" style={{ border: "1px solid #e5e7eb" }}>{p.name}</td>
-                    <td className="p-2" style={{ border: "1px solid #e5e7eb" }}>{p.stock}</td>
-                    <td className="p-2" style={{ border: "1px solid #e5e7eb" }}>{p.expiry_date}</td>
+                    <td className="p-2" style={{ border: "1px solid #e5e7eb" }}>{formatBaseQuantity(Number(p.quantity || 0), p)}</td>
+                    <td className="p-2" style={{ border: "1px solid #e5e7eb" }}>{p.expiry}</td>
                     <td className="p-2" style={{ border: "1px solid #e5e7eb" }}>
                       <span className="px-2 py-0.5 rounded text-xs font-semibold" style={{ backgroundColor: bg, color: fg }}>
                         {days} {isAr ? "يوم" : "days"}
@@ -711,7 +706,7 @@ function StockAlertWidget() {
         .select("id, name, stock, low_stock_threshold, unit, cost, price, main_unit, sub_unit_1, sub_unit_1_ratio, sub_unit_2, sub_unit_2_ratio");
       if (error) throw error;
       return (data ?? [])
-        .map((p: any) => ({ ...p, stock: pwsMap[p.id] ?? 0 }))
+        .map((p: any) => ({ ...p, stock: pwsMap[p.id] ?? Number(p.stock ?? 0) }))
         .filter((p: any) => Number(p.stock || 0) <= Number(p.low_stock_threshold ?? 10))
         .sort((a: any, b: any) => Number(a.stock || 0) - Number(b.stock || 0));
     },

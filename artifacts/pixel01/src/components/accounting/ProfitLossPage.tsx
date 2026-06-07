@@ -84,7 +84,7 @@ export function ProfitLossPage() {
         <EquationCard
           color="#fef3c7" border="#f59e0b" textColor="#92400e"
           title="تكلفة البضاعة المباعة" value={fmt(data?.cogs ?? 0)}
-          formula="تكلفة البضاعة المباعة = مخزون أول المدة (بسعر الشراء) + المشتريات (بسعر الشراء) − مخزون آخر المدة (بسعر الشراء)"
+          formula="تكلفة البضاعة المباعة = مجموع تكلفة الأصناف المباعة (محاسبة مستمرة)"
         />
         <EquationCard
           color="#dbeafe" border="#3b82f6" textColor="#1e40af"

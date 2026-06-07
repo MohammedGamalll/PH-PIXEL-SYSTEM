@@ -1,12 +1,14 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useI18n } from "@/lib/i18n";
 import { formatDateTime } from "@/lib/format";
+import { formatBaseQuantity } from "@/lib/units";
 import { useContact } from "@/hooks/use-contacts";
 import { useContactBalances, computeContactDue } from "@/hooks/use-contact-balances";
 import { DataCard } from "@/components/products/DataCard";
 import {
   useContactPurchases,
+  useContactPurchaseReturns,
   useContactInvoices,
   useContactPayments,
   useContactPurchaseStock,
@@ -39,8 +41,6 @@ import { resettleContactDebt } from "@/lib/debt-allocation.functions";
 import { InvoiceDetailsModal } from "@/components/sales/InvoiceDetailsModal";
 import { PurchaseDetailsModal } from "@/components/purchases/PurchaseDetailsModal";
 import { PaymentDetailsModal } from "@/components/contacts/PaymentDetailsModal";
-import { ReversePaymentModal } from "@/components/contacts/ReversePaymentModal";
-import { RotateCcw } from "lucide-react";
 
 type Scope = "customer" | "supplier" | "both";
 
@@ -331,7 +331,7 @@ function ExportButtons({ filename, headers, rows }: { filename: string; headers:
   );
 }
 
-function SummaryRow({ label, value, highlight }: { label: string; value: string | JSX.Element; highlight?: boolean }) {
+function SummaryRow({ label, value, highlight }: { label: string; value: string | ReactNode; highlight?: boolean }) {
   return (
     <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: "1px solid #f3f4f6" }}>
       <span className="text-sm text-gray-700">{label}</span>
@@ -342,6 +342,7 @@ function SummaryRow({ label, value, highlight }: { label: string; value: string 
 
 function AccountTab({ contact, scope, totalDue, gross }: { contact: any; scope: Scope; totalDue: number; gross: number }) {
   const { data: purchases = [] } = useContactPurchases((scope === "supplier" || scope === "both") ? contact.id : undefined);
+  const { data: purchaseReturns = [] } = useContactPurchaseReturns((scope === "supplier" || scope === "both") ? contact.id : undefined);
   const { data: invoices = [] } = useContactInvoices((scope === "customer" || scope === "both") ? contact.id : undefined);
   const { data: payments = [] } = useContactPayments(contact.id);
   const { data: invItems = [] } = useContactInvoiceItems((scope === "customer" || scope === "both") ? contact.id : undefined);
@@ -440,6 +441,11 @@ function AccountTab({ contact, scope, totalDue, gross }: { contact: any; scope: 
         const amt = Math.abs(Number(p.total ?? 0));
         all.push({ date: formatDateTime(p.created_at ?? p.issue_date) || "", sortKey: p.created_at ?? p.issue_date, ref: p.purchase_number, type: "فاتورة شراء", debit: 0, credit: amt });
       }
+      for (const pr of purchaseReturns as any[]) {
+        if (!inRange(pr.return_date ?? pr.created_at)) continue;
+        const amt = Math.abs(Number(pr.total_amount ?? 0));
+        all.push({ date: formatDateTime(pr.return_date ?? pr.created_at) || "", sortKey: pr.return_date ?? pr.created_at, ref: pr.ref_no ?? "-", type: "مرتجع شراء", debit: amt, credit: 0 });
+      }
     }
     if (scope === "customer" || scope === "both") {
       for (const i of invoices as any[]) {
@@ -484,7 +490,7 @@ function AccountTab({ contact, scope, totalDue, gross }: { contact: any; scope: 
       const isInvoiceRef = r.type === 'فاتورة بيع' || r.type === 'مرتجع بيع' || r.type === 'فاتورة شراء';
       return { cells: [r.date, r.ref, r.type, r.debit.toFixed(2), r.credit.toFixed(2), bal.toFixed(2)], isOpening: r.isOpening, isInvoiceRef, ref: r.ref };
     });
-  }, [contact, purchases, invoices, payments, scope, from, to]);
+  }, [contact, purchases, purchaseReturns, invoices, payments, scope, from, to]);
 
   // Filtered items
   const filteredItems = useMemo(() =>
@@ -863,7 +869,7 @@ function ContactDocsTable({
             {pageRows.length === 0 ? <EmptyRow colSpan={visible.length} /> : pageRows.map((r: any) => (
               <tr key={r.id} className="cursor-pointer hover:bg-blue-50" onClick={() => isSale ? setViewing(r) : setViewing(r)}>
                 {visible.map((c) => c.key === "opt" ? (
-                  <td key={c.key} style={cellStyle} onClick={(e) => e.stopPropagation()}>
+                  <td key={c.key} style={cellStyle} data-print-hide="1" onClick={(e) => e.stopPropagation()}>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <button className="h-8 px-3 inline-flex items-center gap-1 text-xs rounded text-white" style={{ backgroundColor: "#3b82f6" }}>
@@ -933,7 +939,8 @@ function StockTab({ contactId }: { contactId: string }) {
     { key: "current_stock", label: "المخزون الحالي", visible: true },
     { key: "stock_value", label: "قيمة المخزون الحالية", visible: true },
   ];
-  const fmtQty = (n: number) => `${Number(n ?? 0).toFixed(2)} وحدة`;
+  const fmtQty = (n: number, tree?: any) =>
+    tree ? formatBaseQuantity(Number(n ?? 0), tree) : `${Number(n ?? 0).toFixed(2)}`;
   return (
     <ReportTable
       rows={rows}
@@ -944,13 +951,14 @@ function StockTab({ contactId }: { contactId: string }) {
       printTitle="تقرير المخزون"
       rowKey={(r: any, i: number) => r.product_id ?? `row-${i}`}
       cellFor={(r: any, k: string) => {
+        const tree = r.unit_tree;
         switch (k) {
           case "name": return r.name ?? "-";
           case "sku": return r.sku || "-";
-          case "purchased_qty": return fmtQty(r.purchased_qty);
-          case "sold_qty": return fmtQty(r.sold_qty);
-          case "returned_qty": return Number(r.returned_qty ?? 0).toFixed(4);
-          case "current_stock": return fmtQty(r.current_stock);
+          case "purchased_qty": return fmtQty(r.purchased_qty, tree);
+          case "sold_qty": return fmtQty(r.sold_qty, tree);
+          case "returned_qty": return fmtQty(r.returned_qty, tree);
+          case "current_stock": return fmtQty(r.current_stock, tree);
           case "stock_value": return `ج.م ${Number(r.stock_value ?? 0).toFixed(2)}`;
           default: return "";
         }
@@ -1010,9 +1018,8 @@ function DocumentsTab({ contactId }: { contactId: string }) {
 function PaymentsTab({ contactId }: { contactId: string }) {
   const { data = [] } = useContactPayments(contactId);
   const [open, setOpen] = useState<any | null>(null);
-  const [reverseTarget, setReverseTarget] = useState<any | null>(null);
   const rows = data as any[];
-  const head = ["المدفوعة على", "الرقم المرجعي", "المبلغ", "طريقة الدفع", "الحالة", "ملاحظات", "إجراءات"];
+  const head = ["المدفوعة على", "الرقم المرجعي", "المبلغ", "طريقة الدفع", "الحالة", "ملاحظات"];
   return (
     <>
       <div className="overflow-x-auto rounded-md" style={{ border: "1px solid #e5e7eb" }}>
@@ -1036,7 +1043,6 @@ function PaymentsTab({ contactId }: { contactId: string }) {
                 : isRev
                 ? <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, backgroundColor: "#fef3c7", color: "#92400e", fontSize: 12, fontWeight: 600 }}>قيد عكسي {origRef}</span>
                 : <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, backgroundColor: "#dcfce7", color: "#065f46", fontSize: 12, fontWeight: 600 }}>مسجلة</span>;
-              const canReverse = !isRev && !isFullyReversed;
               return (
                 <tr key={p.id} style={{ cursor: "pointer" }} onClick={() => setOpen(p)}>
                   <td style={cellStyle}>{formatDateTime(p.created_at ?? p.payment_date)}</td>
@@ -1045,17 +1051,6 @@ function PaymentsTab({ contactId }: { contactId: string }) {
                   <td style={cellStyle}>{p.payment_method ?? "نقدا"}</td>
                   <td style={cellStyle}>{statusBadge}</td>
                   <td style={cellStyle}>{p.notes ?? "-"}</td>
-                  <td style={cellStyle} onClick={(e) => e.stopPropagation()}>
-                    {canReverse ? (
-                      <button
-                        onClick={() => setReverseTarget(p)}
-                        title="عكس دفعة"
-                        style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 4, backgroundColor: "#dc2626", color: "#fff", border: 0, cursor: "pointer", fontSize: 12 }}
-                      >
-                        <RotateCcw className="h-3 w-3" /> عكس
-                      </button>
-                    ) : <span style={{ color: "#9ca3af" }}>—</span>}
-                  </td>
                 </tr>
               );
             })}
@@ -1063,7 +1058,6 @@ function PaymentsTab({ contactId }: { contactId: string }) {
         </table>
       </div>
       <PaymentDetailsModal open={!!open} onOpenChange={(v) => !v && setOpen(null)} payment={open} />
-      <ReversePaymentModal open={!!reverseTarget} onClose={() => setReverseTarget(null)} payment={reverseTarget} contactId={contactId} contactScope={undefined} />
     </>
   );
 }

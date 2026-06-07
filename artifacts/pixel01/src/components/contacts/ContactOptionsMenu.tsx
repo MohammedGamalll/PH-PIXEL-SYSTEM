@@ -100,7 +100,7 @@ export function ContactOptionsMenu({ contact, scope }: Props) {
       {scope === "supplier" && (
         <ContactPaymentModal
           open={refundOpen}
-          direction="in"
+          direction="out"
           contactType="supplier"
           titleOverride="استلام مرتجع شراء مستحق"
           initialContactId={contact.id}

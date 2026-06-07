@@ -12,7 +12,8 @@ import { Button } from "@/components/ui/button";
 import { createStandaloneReturn } from "@/lib/standalone-returns.functions";
 import { formatCurrency } from "@/lib/format";
 import { useSettings } from "@/contexts/SettingsContext";
-import { unitOptions, toBase, formatBaseQuantity, type UnitLevel, type ProductUnitTree } from "@/lib/units";
+import { unitOptions, toBase, formatBaseQuantity, baseUnitsPer, type UnitLevel, type ProductUnitTree } from "@/lib/units";
+import { priceForUnitLevel } from "@/lib/stock-display";
 import { PHARMACY_UNITS } from "@/lib/pharmacy-units";
 import { DateInput } from "@/components/shared/DateInput";
 
@@ -106,6 +107,7 @@ function filterProducts(products: ProductRow[], term: string): ProductRow[] {
 
 export function StandaloneReturnPage() {
   const qc = useQueryClient();
+  const { user } = useAuth();
   const { settings } = useSettings();
   const { data: treasuries = [] } = useTreasuries();
   const { data: products = [] } = useProductSearch();
@@ -115,7 +117,7 @@ export function StandaloneReturnPage() {
   const submitFn = createStandaloneReturn;
 
   const { data: sessions = [] } = useCashierSessions();
-  const activeSession = sessions.find((s: any) => s.status === 'open');
+  const activeSession = sessions.find((s: any) => s.status === "open" && s.user_id === user?.id);
 
   const [returnType, setReturnType] = useState<"sales" | "purchase">("sales");
   const [treasuryId, setTreasuryId] = useState<string>("");
@@ -165,7 +167,16 @@ export function StandaloneReturnPage() {
       sub_unit_2: match.sub_unit_2,
       sub_unit_2_ratio: match.sub_unit_2_ratio,
     };
-    const basePrice = Number(returnType === "sales" ? match.price : match.cost) || 0;
+    const unitPrice = priceForUnitLevel(
+      { ...match, price: returnType === "sales" ? match.price : match.cost },
+      first.level,
+      baseUnitsPer,
+    );
+    const basePrice = priceForUnitLevel(
+      { ...match, price: returnType === "sales" ? match.price : match.cost },
+      "main",
+      baseUnitsPer,
+    );
     updateRow(key, {
       product_id: match.id,
       product_name: match.name,
@@ -176,7 +187,7 @@ export function StandaloneReturnPage() {
       unit_choices: choices.length ? choices : [first],
       product_units: tree,
       base_price: basePrice,
-      unit_price: basePrice * (first.ratio || 1),
+      unit_price: unitPrice,
       current_stock_base: Number(match.stock) || 0,
       searchText: match.name,
       showDropdown: false,
@@ -251,11 +262,18 @@ export function StandaloneReturnPage() {
     if (!r) return;
     const choice = r.unit_choices.find((c) => c.level === level);
     if (!choice) return;
+    const unitPrice = r.product_units
+      ? priceForUnitLevel(
+          { ...r.product_units, price: r.base_price || r.unit_price },
+          level,
+          baseUnitsPer,
+        )
+      : (r.base_price || 0) * (choice.ratio || 1);
     updateRow(key, {
       unit_level: level,
       unit_name: choice.name,
       base_factor: choice.ratio,
-      unit_price: (r.base_price || 0) * (choice.ratio || 1),
+      unit_price: unitPrice,
     });
   };
 

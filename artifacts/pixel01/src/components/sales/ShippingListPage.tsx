@@ -125,7 +125,7 @@ export function ShippingListPage() {
               {pageRows.length === 0 ? <EmptyRow colSpan={visible.length} /> : pageRows.map((r) => (
                 <tr key={r.id}>
                   {visible.map((c) => c.key === "opt" ? (
-                    <td key={c.key} style={cellStyle}>
+                    <td key={c.key} style={cellStyle} data-print-hide="1">
                       <button onClick={() => setEditShipId(r.id)} className="h-8 px-3 inline-flex items-center gap-1 text-xs rounded text-white" style={{ backgroundColor: "#3b82f6" }}>
                         <Truck className="h-3 w-3" /> {t("sales.actions.edit")}
                       </button>

@@ -66,6 +66,7 @@ function EditPurchasePage() {
       has_expiry: !!it.expiry_date,
       expiry_date: it.expiry_date ?? "",
       main_unit_name: prod?.main_unit ?? null,
+      current_stock_base: prod ? Number(prod.stock ?? 0) : undefined,
     } as Row;
   });
 

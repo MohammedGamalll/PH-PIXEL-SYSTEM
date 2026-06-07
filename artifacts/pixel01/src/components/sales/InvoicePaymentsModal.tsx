@@ -7,8 +7,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useTreasuries, useInvoicePayments, useAddInvoicePayment } from "@/hooks/use-invoices";
 import { useI18n } from "@/lib/i18n";
 import { DateInput } from "@/components/shared/DateInput";
-import { ReversePaymentModal } from "@/components/contacts/ReversePaymentModal";
-import { RotateCcw } from "lucide-react";
 
 
 type Props = {
@@ -29,7 +27,6 @@ export function InvoicePaymentsModal({ open, onOpenChange, invoice }: Props) {
   const [method, setMethod] = useState<string>("cash");
   const [note, setNote] = useState<string>("");
   const [date, setDate] = useState<string>(new Date().toISOString().slice(0, 10));
-  const [reverseTarget, setReverseTarget] = useState<any | null>(null);
 
 
   if (!invoice) return null;
@@ -74,12 +71,11 @@ export function InvoicePaymentsModal({ open, onOpenChange, invoice }: Props) {
                   <th className="p-2 text-start">طريقة الدفع</th>
                   <th className="p-2 text-start">{t("sales.payments.desc")}</th>
                   <th className="p-2 text-start">الحالة</th>
-                  <th className="p-2 text-start">إجراءات</th>
                 </tr>
               </thead>
               <tbody>
                 {payments.length === 0 ? (
-                  <tr><td colSpan={7} className="p-3 text-center text-gray-500">{t("sales.payments.no_history")}</td></tr>
+                  <tr><td colSpan={6} className="p-3 text-center text-gray-500">{t("sales.payments.no_history")}</td></tr>
                 ) : (payments as any[]).map((p: any) => {
                   const isCp = p.source === "contact_payment";
                   const isRev = p.is_reversal === true;
@@ -106,14 +102,6 @@ export function InvoicePaymentsModal({ open, onOpenChange, invoice }: Props) {
                         ) : (
                           <span style={{ background: "#f3f4f6", color: "#374151", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>مسجلة</span>
                         )}
-                      </td>
-                      <td className="p-2">
-                        {!isRev && !fullyReversed ? (
-                          <button onClick={() => setReverseTarget(p)} title="عكس الدفعة"
-                            style={{ background: "#fff", color: "#dc2626", border: "1px solid #fca5a5", borderRadius: 4, padding: "4px 8px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                            <RotateCcw className="h-3 w-3" /> عكس
-                          </button>
-                        ) : "—"}
                       </td>
                     </tr>
                   );
@@ -158,16 +146,6 @@ export function InvoicePaymentsModal({ open, onOpenChange, invoice }: Props) {
           <Button onClick={submit} disabled={!amount || !treasuryId || add.isPending}>{t("sales.payments.register")}</Button>
         </DialogFooter>
       </DialogContent>
-      <ReversePaymentModal
-        open={!!reverseTarget}
-        onClose={() => setReverseTarget(null)}
-        transaction={reverseTarget && reverseTarget.source !== "contact_payment" ? reverseTarget : null}
-        payment={reverseTarget && reverseTarget.source === "contact_payment" ? reverseTarget : null}
-        targetDocumentId={invoice?.id ?? null}
-        targetDocumentLabel={invoice ? `الفاتورة #${invoice.invoice_number}` : null}
-        contactId={invoice?.customer_id ?? null}
-        contactScope="customer"
-      />
     </Dialog>
   );
 }

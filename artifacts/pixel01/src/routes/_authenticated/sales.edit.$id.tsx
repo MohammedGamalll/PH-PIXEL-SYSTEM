@@ -70,6 +70,7 @@ function EditSalesInvoicePage() {
       product_units: tree,
       expiry_date: it.expiry_date ?? null,
       main_unit_name: p?.main_unit ?? null,
+      current_stock_base: p ? Number(p.stock ?? 0) : undefined,
     } as SaleRow;
   });
 

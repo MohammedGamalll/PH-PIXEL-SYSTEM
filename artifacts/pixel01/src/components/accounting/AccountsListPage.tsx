@@ -242,15 +242,21 @@ export function AccountsListPage() {
                               style={actionBtn({ bg: "#fef3c7", fg: "#92400e", border: "#fcd34d" })}>
                               <BookOpen className="h-3 w-3" /> {t("accounting.accounts.action.ledger")}
                             </Link>
+                            {!r.is_closed && (
                             <button onClick={() => setDepositFor(r)} style={actionBtn({ bg: "#16a34a", fg: "#fff", border: "#16a34a" })}>
                               <Banknote className="h-3 w-3" /> {t("accounting.accounts.action.deposit")}
                             </button>
+                            )}
+                            {!r.is_closed && (
                             <button onClick={() => setTransferFor(r)} style={actionBtn({ bg: "#fde68a", fg: "#78350f", border: "#f59e0b" })}>
                               <ArrowLeftRight className="h-3 w-3" /> {t("accounting.accounts.action.transfer")}
                             </button>
+                            )}
+                            {!r.is_closed && (
                             <button onClick={() => setClosingId(r.id)} style={actionBtn({ bg: "#fff", fg: "#dc2626", border: "#fca5a5" })}>
                               <Power className="h-3 w-3" /> {t("accounting.accounts.action.close")}
                             </button>
+                            )}
                           </div>
                         </td>
                       ) : (
@@ -399,9 +405,9 @@ function AccountEditorModal({
     setDetails((d) => d.map((x, idx) => idx === i ? { ...x, ...patch } : x));
 
   const submit = async () => {
-    if (!name.trim()) return toast.error(t("accounting.account_form.err_name"));
-    if (!accountNumber.trim()) return toast.error(t("accounting.account_form.err_number"));
-    if (!type) return toast.error(t("accounting.account_form.err_type"));
+    if (!name.trim()) { toast.error(t("accounting.account_form.err_name")); return; }
+    if (!accountNumber.trim()) { toast.error(t("accounting.account_form.err_number")); return; }
+    if (!type) { toast.error(t("accounting.account_form.err_type")); return; }
     await onSubmit({
       name: name.trim(),
       account_number: accountNumber.trim(),
@@ -505,7 +511,7 @@ function OpeningDepositModal({
 
   const submit = async () => {
     const amt = Number(amount);
-    if (!amt || amt <= 0) return toast.error(t("accounting.deposit.err_amount"));
+    if (!amt || amt <= 0) { toast.error(t("accounting.deposit.err_amount")); return; }
     await onSubmit({ amount: amt, entry_date: date, payment_method: method, note: note || null });
   };
 
@@ -558,9 +564,9 @@ function FinancialTransferModal({
   const options = accounts.filter((a) => a.id !== fromAccount.id && !a.is_closed);
 
   const submit = async () => {
-    if (!toId) return toast.error(t("accounting.transfer.err_to"));
+    if (!toId) { toast.error(t("accounting.transfer.err_to")); return; }
     const amt = Number(amount);
-    if (!amt || amt <= 0) return toast.error(t("accounting.deposit.err_amount"));
+    if (!amt || amt <= 0) { toast.error(t("accounting.deposit.err_amount")); return; }
     await onSubmit({ to_account_id: toId, amount: amt, entry_date: date, payment_method: method, note: note || null });
   };
 

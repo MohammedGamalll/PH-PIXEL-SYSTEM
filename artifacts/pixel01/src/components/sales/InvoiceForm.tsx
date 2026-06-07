@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/products/PageHeader";
 import { DataCard } from "@/components/products/DataCard";
 import { useContacts } from "@/hooks/use-contacts";
+import { useRecalcProductStock } from "@/hooks/use-recalc-stock";
 import { useCreateInvoice, useUpdateInvoice, type InvoiceType } from "@/hooks/use-invoices";
 import { useOwnerId } from "@/lib/owner";
 import { useSalesReps } from "@/hooks/use-sales-reps";
@@ -90,6 +91,7 @@ export function InvoiceForm({
   initial?: InvoiceFormInitial;
 }) {
   const navigate = useNavigate();
+  useRecalcProductStock();
   const { t, dir } = useI18n();
   const { data: customers = [] } = useContacts("customer");
   const { data: salesReps = [] } = useSalesReps();

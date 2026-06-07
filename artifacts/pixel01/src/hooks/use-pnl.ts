@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { toMainUnits } from "@/lib/units";
 
 export type PnlItemRow = {
   product_id: string;
@@ -123,7 +124,7 @@ export function useProfitLoss(from?: string, to?: string, paymentMethod?: string
       }
 
       const { data: products } = await (supabase.from("products") as any)
-        .select("id,name,cost,price,stock,category_id,brand_id");
+        .select("id,name,cost,price,stock,category_id,brand_id,main_unit,sub_unit_1,sub_unit_1_ratio,sub_unit_2,sub_unit_2_ratio");
       const productMap = new Map<string, any>((products ?? []).map((p: any) => [p.id, p]));
 
       const { data: cats } = await (supabase.from("categories") as any).select("id,name");
@@ -135,11 +136,11 @@ export function useProfitLoss(from?: string, to?: string, paymentMethod?: string
 
       const invMap = new Map<string, any>((invoices ?? []).map((i: any) => [i.id, i]));
 
-      // Closing stock from current products: cost = stock * cost, sale = stock * price
+      // Closing stock from current products: cost is per main unit
       const closingStockCost = (products ?? []).reduce(
-        (s: number, p: any) => s + (Number(p.stock) || 0) * (Number(p.cost) || 0), 0);
+        (s: number, p: any) => s + toMainUnits(Number(p.stock) || 0, p) * (Number(p.cost) || 0), 0);
       const closingStockSale = (products ?? []).reduce(
-        (s: number, p: any) => s + (Number(p.stock) || 0) * (Number(p.price) || 0), 0);
+        (s: number, p: any) => s + toMainUnits(Number(p.stock) || 0, p) * (Number(p.price) || 0), 0);
 
       // Opening stock from is_opening=true purchases (cost and sale).
       const { data: openingHeaders } = await (supabase.from("purchases") as any)
@@ -167,12 +168,14 @@ export function useProfitLoss(from?: string, to?: string, paymentMethod?: string
         if (!invoice) continue;
         const isReturn = invoice.type === "sale_return";
         const sign = isReturn ? -1 : 1;
-        const qty = Math.abs(Number(it.base_quantity ?? it.quantity) || 0) * sign;
+        const baseQty = Math.abs(Number(it.base_quantity ?? it.quantity) || 0);
+        const qty = baseQty * sign;
         const value = Math.abs(Number(it.total) || 0) * sign;
         const p = productMap.get(it.product_id);
         const histCost = it.cost_at_time != null ? Number(it.cost_at_time) : NaN;
         const cost = Number.isFinite(histCost) && histCost > 0 ? histCost : Number(p?.cost) || 0;
-        const lineCogs = qty * cost;
+        const mainQty = p ? toMainUnits(baseQty, p) : baseQty;
+        const lineCogs = mainQty * cost * sign;
 
         const existing = byProduct.get(it.product_id) ?? {
           product_id: it.product_id,

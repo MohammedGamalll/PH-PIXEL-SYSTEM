@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useSettings } from "@/contexts/SettingsContext";
@@ -6,6 +7,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Win7Modal } from "./Win7Modal";
 import { inputStyle, modalBtn } from "./win7";
+import {
+  fetchSessionContactPayments,
+  fetchSessionStandaloneReturns,
+  sumStandaloneReturns,
+  type SessionStandaloneReturn,
+} from "@/lib/cashier-session-data";
 
 type Props = {
   sessionId: string;
@@ -32,12 +39,14 @@ type Stat = {
   returnCount: number;
   stdSalesRefund: number;
   stdPurchaseDeposit: number;
+  stdReturns: SessionStandaloneReturn[];
   items: { description: string; sku: string | null; brand: string | null; quantity: number; total: number }[];
   returnedItems: { description: string; sku: string | null; brand: string | null; quantity: number; total: number }[];
 };
 
 export function CloseSessionModal({ sessionId, openingCash, openedAt, onClose, onClosed }: Props) {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { settings } = useSettings();
   const qc = useQueryClient();
   const [stat, setStat] = useState<Stat | null>(null);
@@ -47,7 +56,9 @@ export function CloseSessionModal({ sessionId, openingCash, openedAt, onClose, o
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
+      try {
       const { data: invs } = await (supabase.from("invoices") as any)
         .select("id, total, payment_method, type")
         .eq("session_id", sessionId)
@@ -65,17 +76,9 @@ export function CloseSessionModal({ sessionId, openingCash, openedAt, onClose, o
         .ilike("notes", `%session:${sessionId}%`);
       const expSum = (exps ?? []).reduce((a: number, b: any) => a + Number(b.amount || 0), 0);
 
-      const { data: cps } = await (supabase.from("contact_payments") as any)
-        .select("amount, direction")
-        .eq("session_id", sessionId);
-      const custPay = (cps ?? []).filter((c: any) => c.direction === "in").reduce((a: number, b: any) => a + Number(b.amount || 0), 0);
-      const supPay = (cps ?? []).filter((c: any) => c.direction === "out").reduce((a: number, b: any) => a + Number(b.amount || 0), 0);
-
-      const { data: stdReturns } = await (supabase.from("standalone_returns") as any)
-        .select("total_amount, return_type")
-        .eq("session_id", sessionId);
-      const stdSalesRefund = (stdReturns ?? []).filter((x: any) => x.return_type === "sales").reduce((a: number, b: any) => a + Number(b.total_amount || 0), 0);
-      const stdPurchaseDeposit = (stdReturns ?? []).filter((x: any) => x.return_type === "purchase").reduce((a: number, b: any) => a + Number(b.total_amount || 0), 0);
+      const stdReturns = await fetchSessionStandaloneReturns(sessionId);
+      const { stdSalesRefund, stdPurchaseDeposit } = sumStandaloneReturns(stdReturns);
+      const { customerPayments: custPay, supplierPayments: supPay } = await fetchSessionContactPayments(sessionId, stdReturns);
 
       // Aggregate sold + returned items
       const saleIds = sales.map((x) => x.id);
@@ -130,10 +133,24 @@ export function CloseSessionModal({ sessionId, openingCash, openedAt, onClose, o
         returnCount: returns.length,
         stdSalesRefund,
         stdPurchaseDeposit,
+        stdReturns,
         items,
         returnedItems,
       });
+      } catch (e) {
+        console.error("CloseSessionModal load:", e);
+        if (!cancelled) {
+          setStat({
+            cashSales: 0, cardSales: 0, creditSales: 0, multiSales: 0, bankSales: 0,
+            invoiceCount: 0, expenses: 0, customerPayments: 0, supplierPayments: 0,
+            cashRefunds: 0, cardRefunds: 0, bankRefunds: 0, creditRefunds: 0,
+            returnCount: 0, stdSalesRefund: 0, stdPurchaseDeposit: 0, stdReturns: [],
+            items: [], returnedItems: [],
+          });
+        }
+      }
     })();
+    return () => { cancelled = true; };
   }, [sessionId]);
 
   const expectedDrawer = useMemo(
@@ -196,6 +213,7 @@ export function CloseSessionModal({ sessionId, openingCash, openedAt, onClose, o
     qc.invalidateQueries({ queryKey: ["cashier_sessions"] });
     toast.success("تم إقفال الجلسة");
     onClosed();
+    navigate({ to: "/sales/cashier-log" });
   };
 
   const openedDate = new Date(openedAt);
@@ -371,6 +389,35 @@ export function CloseSessionModal({ sessionId, openingCash, openedAt, onClose, o
               </tfoot>
             </table>
           </Section>
+
+          {stat.stdReturns.length > 0 && (
+            <Section title={`\u0645\u0631\u062A\u062C\u0639\u0627\u062A \u062D\u0631\u0629 (${stat.stdReturns.length})`}>
+              <table style={tbl}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>#</th>
+                    <th style={thStyle}>{"\u0627\u0644\u0645\u0631\u062C\u0639"}</th>
+                    <th style={thStyle}>{"\u0627\u0644\u0646\u0648\u0639"}</th>
+                    <th style={thStyle}>{"\u0627\u0644\u062A\u0627\u0631\u064A\u062E"}</th>
+                    <th style={thStyle}>{"\u0627\u0644\u0645\u0628\u0644\u063A"}</th>
+                    <th style={thStyle}>{"\u0627\u0644\u0633\u0628\u0628"}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stat.stdReturns.map((r, i) => (
+                    <tr key={r.id} style={{ background: "#fffbeb" }}>
+                      <td style={tdStyle}>{i + 1}</td>
+                      <td style={tdStyle}>{r.reference_no || "\u2014"}</td>
+                      <td style={tdStyle}>{r.return_type === "sales" ? "\u0645\u0628\u064A\u0639\u0627\u062A" : "\u0645\u0634\u062A\u0631\u064A\u0627\u062A"}</td>
+                      <td style={tdStyle}>{r.return_date || r.created_at ? new Date(r.return_date || r.created_at!).toLocaleString("ar-EG") : "\u2014"}</td>
+                      <td style={{ ...tdStyle, color: "#b45309", fontWeight: 700 }}>-{fmt(r.total_amount)} {"\u062C.\u0645"}</td>
+                      <td style={tdStyle}>{r.reason || "\u2014"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Section>
+          )}
 
           {/* Contact payments */}
           <Section title="دفعات الزبائن والموردين">

@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { Link } from "@tanstack/react-router";
 import { PageHeader } from "@/components/products/PageHeader";
 import { DataCard } from "@/components/products/DataCard";
 import { TableToolbar, TableFooter } from "@/components/products/TableToolbar";
@@ -81,7 +80,6 @@ export function TransactionsLogPage() {
     { key: "method", label: t("accounting.tx.col.method"), visible: true },
     { key: "account_name", label: t("accounting.tx.col.account"), visible: true },
     { key: "description", label: t("accounting.tx.col.desc"), visible: true },
-    { key: "opt", label: t("accounting.tx.col.options"), visible: true },
   ];
 
   const exportRows = () => sorted.map((r) => [r.entry_date, r.ref_no || r.source_type, (r.debit || r.credit).toFixed(2), r.payment_method || "", r.account_name, r.description || ""]);
@@ -148,22 +146,8 @@ export function TransactionsLogPage() {
                     </td>
                     <td style={{ ...cellStyle, fontWeight: 600, color: r.debit ? "#166534" : "#991b1b" }}>{fmt(amount)}</td>
                     <td style={cellStyle}>{r.payment_method || t("accounting.payment.cash")}</td>
-                    <td style={cellStyle}>
-                      <Link to="/accounting/ledger/$accountId" params={{ accountId: r.account_id }} style={{ color: "#1d4ed8", textDecoration: "underline" }}>
-                        {r.account_name}
-                      </Link>
-                    </td>
+                    <td style={cellStyle}>{r.account_name}</td>
                     <td style={cellStyle}>{r.description || "—"}</td>
-                    <td style={cellStyle}>
-                      <Link
-                        to="/accounting/ledger/$accountId"
-                        params={{ accountId: r.account_id }}
-                        className="inline-flex items-center px-2 py-0.5 rounded text-xs"
-                        style={{ background: "#dbeafe", color: "#1e40af", border: "1px solid #93c5fd" }}
-                      >
-                        {t("accounting.tx.link_account")}
-                      </Link>
-                    </td>
                   </tr>
                 );
               })}

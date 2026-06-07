@@ -10,7 +10,6 @@ import { DataCard } from "@/components/products/DataCard";
 import { ProductFilters, emptyFilters, type ProductFiltersState } from "@/components/products/ProductFilters";
 import { Plus, Download, Trash2, Barcode as BarcodeIcon, Pencil, Eye, MoreVertical, Star } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { AddOpeningStockDialog } from "@/components/products/AddOpeningStockDialog";
 import { toast } from "sonner";
 import { exportToCsv } from "@/lib/csv";
 import { exportSingleSheet } from "@/lib/excel-export";
@@ -42,9 +41,12 @@ function AllProductsPage() {
 
   useEffect(() => {
     (supabase.rpc as any)("recalc_product_stock")
-      .then(() => qc.invalidateQueries({ queryKey: ["product_warehouse_stock"] }))
+      .then(() => {
+        qc.invalidateQueries({ queryKey: ["product_warehouse_stock"] });
+        qc.invalidateQueries({ queryKey: ["products"] });
+      })
       .catch(() => {});
-  }, []);
+  }, [qc]);
 
   const [search, setSearch] = useState("");
   const [perPage, setPerPage] = useState("25");
@@ -83,7 +85,6 @@ function AllProductsPage() {
   const [detailsProduct, setDetailsProduct] = useState<any | null>(null);
   const [quickItemIds, setQuickItemIds] = useState<string[]>([]);
 
-  const [openingOpen, setOpeningOpen] = useState(false);
   useEffect(() => {
     const load = () => setQuickItemIds(getQuickItemIds());
     load();
@@ -94,8 +95,6 @@ function AllProductsPage() {
       window.removeEventListener("storage", load);
     };
   }, []);
-
-  const [openingProduct, setOpeningProduct] = useState<{ id: string; name: string; cost?: number | null } | null>(null);
 
   const { data: productsRaw = [] } = useQuery({
     queryKey: ["products"],
@@ -351,7 +350,7 @@ function AllProductsPage() {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onSelect={() => { setOpeningProduct(null); setOpeningOpen(true); }}>
+                  <DropdownMenuItem onSelect={() => navigate({ to: "/products/import-opening-stock" })}>
                     إضافة كميات افتتاحية
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -362,13 +361,6 @@ function AllProductsPage() {
 
         }
       />
-
-      <AddOpeningStockDialog
-        open={openingOpen}
-        onOpenChange={(o) => { setOpeningOpen(o); if (!o) setOpeningProduct(null); }}
-        preselectedProduct={openingProduct}
-      />
-
 
       <DataCard>
         <div className="flex items-center justify-end gap-2 pb-2 mb-3" style={{ borderBottom: "1px solid #e5e7eb" }}>
@@ -495,7 +487,7 @@ function AllProductsPage() {
                               </DropdownMenuItem>
                             )}
                             {can("products", "create") && (
-                              <DropdownMenuItem onSelect={() => { setOpeningProduct({ id: p.id, name: p.name, cost: p.cost }); setOpeningOpen(true); }}>
+                              <DropdownMenuItem onSelect={() => navigate({ to: "/products/import-opening-stock", search: { productId: p.id } as any })}>
                                 <Plus className="h-4 w-4 me-2" style={{ color: BLUE }} />
                                 إضافة كميات افتتاحية
                               </DropdownMenuItem>

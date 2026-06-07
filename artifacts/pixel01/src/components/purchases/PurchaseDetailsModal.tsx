@@ -2,11 +2,10 @@ import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Printer, RotateCcw } from "lucide-react";
+import { Printer } from "lucide-react";
 import { usePurchaseItemsOf, usePurchasePayments } from "@/hooks/use-purchases";
 import { useAccounts } from "@/hooks/use-accounts";
 import { PrintablePurchase } from "./PrintablePurchase";
-import { ReversePaymentModal } from "@/components/contacts/ReversePaymentModal";
 import { ReverseInvoiceModal } from "@/components/sales/ReverseInvoiceModal";
 
 export function PurchaseDetailsModal({
@@ -16,7 +15,6 @@ export function PurchaseDetailsModal({
   const { data: payments = [] } = usePurchasePayments(purchase?.id);
   const { data: accounts = [] } = useAccounts();
   const printRef = useRef<HTMLDivElement>(null);
-  const [reverseTarget, setReverseTarget] = useState<any | null>(null);
   const [reverseDoc, setReverseDoc] = useState(false);
   const cashboxName = useMemo(() => {
     const id = purchase?.payment_account_id || purchase?.payment_account;
@@ -110,12 +108,12 @@ export function PurchaseDetailsModal({
                   <tr>
                     <th style={head}>#</th><th style={head}>تاريخ</th><th style={head}>الرقم المرجعي</th>
                     <th style={head}>المبلغ المدفوع</th><th style={head}>طريقة الدفع</th>
-                    <th style={head}>الحالة</th><th style={head}>إجراءات</th>
+                    <th style={head}>الحالة</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(payments as any[]).length === 0 ? (
-                    <tr><td colSpan={7} style={{ ...cell, textAlign: "center" }}>لا توجد مدفوعات</td></tr>
+                    <tr><td colSpan={6} style={{ ...cell, textAlign: "center" }}>لا توجد مدفوعات</td></tr>
                   ) : (payments as any[]).map((p: any, i: number) => {
                     const isRev = p.is_reversal === true;
                     const reversedAmt = Number(p.reversed_amount ?? 0);
@@ -135,14 +133,6 @@ export function PurchaseDetailsModal({
                             : partiallyReversed ? <span style={{ background: "#fde68a", color: "#92400e", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>جزئية ({reversedAmt.toFixed(2)})</span>
                             : isRev ? <span style={{ background: "#fef3c7", color: "#92400e", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>قيد عكسي</span>
                             : <span style={{ background: "#f3f4f6", color: "#374151", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>مسجلة</span>}
-                        </td>
-                        <td style={cell}>
-                          {!isRev && !fullyReversed ? (
-                            <button onClick={() => setReverseTarget(p)} title="عكس الدفعة"
-                              style={{ background: "#fff", color: "#dc2626", border: "1px solid #fca5a5", borderRadius: 4, padding: "4px 8px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12 }}>
-                              <RotateCcw className="h-3 w-3" /> عكس
-                            </button>
-                          ) : "—"}
                         </td>
                       </tr>
                     );
@@ -179,17 +169,6 @@ export function PurchaseDetailsModal({
       </Dialog>
 
       <ReverseInvoiceModal open={reverseDoc} onClose={() => setReverseDoc(false)} document={purchase} scope="purchase" />
-
-      <ReversePaymentModal
-        open={!!reverseTarget}
-        onClose={() => setReverseTarget(null)}
-        transaction={reverseTarget && reverseTarget.source !== "contact_payment" ? reverseTarget : null}
-        payment={reverseTarget && reverseTarget.source === "contact_payment" ? reverseTarget : null}
-        targetDocumentId={purchase?.id ?? null}
-        targetDocumentLabel={`فاتورة الشراء #${purchase.purchase_number}`}
-        contactId={purchase.supplier_id ?? null}
-        contactScope="supplier"
-      />
 
       {/* Hidden printable */}
       {typeof document !== "undefined" && createPortal(
