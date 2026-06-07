@@ -28,6 +28,7 @@ import { SortableHead } from "@/components/shared/SortableHead";
 import { useWarehouseContext } from "@/contexts/WarehouseContext";
 import { formatDateTime } from "@/lib/format";
 import { useCan } from "@/lib/can";
+import { printTableFromData } from "@/lib/print-table";
 
 export const Route = createFileRoute("/_authenticated/purchases/all")({
   component: AllPurchasesPage,
@@ -212,6 +213,28 @@ function AllPurchasesPage() {
         return typeof v === "string" ? v : (r[c.key] ?? "");
       })));
 
+  const textCellFor = (r: any, key: string) => {
+    if (key === "return_flag") return returnedPurchaseIds.has(r.id) ? "تم عمل مرتجع" : "";
+    const v = cellFor(r, key);
+    return typeof v === "string" ? v : String(r[key] ?? "");
+  };
+
+  const printCols = visible.filter((c) => c.key !== "opt");
+  const handlePrintTable = () => {
+    printTableFromData({
+      title: t("purchases.page.all_section"),
+      subtitle: `${new Date().toLocaleString()} — ${sorted.length} صف`,
+      headers: printCols.map((c) => c.label),
+      rows: sorted.map((r) => printCols.map((c) => textCellFor(r, c.key))),
+      footer: printCols.map((c, i) => {
+        if (c.key === "total") return fmtMoney(totalSum);
+        if (c.key === "due_amount") return fmtMoney(dueSum);
+        if (i === 0) return t("purchases.totals.label");
+        return "";
+      }),
+    });
+  };
+
   return (
     <div className="space-y-3" dir={dir}>
       <PageHeader title={t("purchases.page.all_title")} actions={
@@ -234,8 +257,9 @@ function AllPurchasesPage() {
           onExportCsv={can("purchase_invoices", "print") ? () => exportCsv("purchases.csv") : undefined}
           onExportExcel={can("purchase_invoices", "print") ? () => exportCsv("purchases.xls") : undefined}
           printRef={can("purchase_invoices", "print") ? printRef : undefined} printTitle="purchases"
+          onPrint={can("purchase_invoices", "print") ? handlePrintTable : undefined}
           columns={cols} onToggleColumn={(k) => setCols((s) => s.map((c) => c.key === k ? { ...c, visible: !c.visible } : c))} />
-        <div className="overflow-x-auto" ref={tableRef}>
+        <div className="overflow-x-auto rounded-md print-table-area" ref={(el) => { tableRef.current = el; printRef.current = el; }}>
           <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
             <thead><SortableHead cols={visible} headStyle={headStyle} sort={sort} onSort={setSort} /></thead>
             <tbody>

@@ -22,6 +22,8 @@ export function InvoicePaymentsModal({ open, onOpenChange, invoice }: Props) {
   const add = useAddInvoicePayment();
 
   const due = invoice ? Math.max(0, Number(invoice.total || 0) - Number(invoice.paid_amount || 0)) : 0;
+  const amountNum = Number(amount) || 0;
+  const overPaid = Math.max(0, amountNum - due);
   const [amount, setAmount] = useState<string>("");
   const [treasuryId, setTreasuryId] = useState<string>("");
   const [method, setMethod] = useState<string>("cash");
@@ -58,6 +60,12 @@ export function InvoicePaymentsModal({ open, onOpenChange, invoice }: Props) {
           <div><span className="text-gray-500">{t("sales.payments.paid")}</span> <strong>{Number(invoice.paid_amount).toFixed(2)} ج.م</strong></div>
           <div><span className="text-gray-500">{t("sales.payments.remaining")}</span> <strong className="text-red-700">{due.toFixed(2)} ج.م</strong></div>
         </div>
+
+        {due <= 0 ? (
+          <div className="text-sm text-amber-700 font-medium p-3 bg-amber-50 border border-amber-200 rounded">
+            هذه الفاتورة مدفوعة بالكامل. أي مبلغ تدفعه الآن سيُوزَّع على فواتير العميل الأخرى أو يُسجَّل كرصيد.
+          </div>
+        ) : null}
 
         <div className="mt-2">
           <h4 className="text-sm font-bold mb-1">{t("sales.payments.history")}</h4>
@@ -138,6 +146,11 @@ export function InvoicePaymentsModal({ open, onOpenChange, invoice }: Props) {
               </Select>
             </div>
             <div className="sm:col-span-2"><Label>{t("sales.payments.notes")}</Label><Input value={note} onChange={(e) => setNote(e.target.value)} /></div>
+            {overPaid > 0.0001 && due > 0 && (
+              <div className="sm:col-span-2 text-sm text-cyan-800 font-medium p-2 bg-cyan-50 border border-cyan-200 rounded">
+                زيادة الدفع: {overPaid.toFixed(2)} ج.م (سيُسجَّل كرصيد في حساب العميل)
+              </div>
+            )}
           </div>
         </div>
 

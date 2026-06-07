@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useOwnerId } from "@/lib/owner";
 import { friendlyDbError, requireOwnerId } from "@/lib/db-errors";
+import { requireTreasuryAccountId } from "@/lib/treasury-account";
 import { useWarehouseContext } from "@/contexts/WarehouseContext";
 import { toast } from "sonner";
 
@@ -160,6 +161,7 @@ export function useCreatePurchase() {
       qc.invalidateQueries({ queryKey: ["contact-balances"] });
       qc.invalidateQueries({ queryKey: ["purchase_items_all"] });
       qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["stock-alert"] });
       toast.success("تم حفظ عملية الشراء");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -240,6 +242,7 @@ export function useUpdatePurchase() {
       qc.invalidateQueries({ queryKey: ["purchase_items_all"] });
       qc.invalidateQueries({ queryKey: ["purchase_items"] });
       qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["stock-alert"] });
       qc.invalidateQueries({ queryKey: ["product_warehouse_stock"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
       qc.invalidateQueries({ queryKey: ["account-balances"] });
@@ -359,6 +362,7 @@ export function useCreatePurchaseReturn() {
       qc.invalidateQueries({ queryKey: ["contact-balances"] });
       qc.invalidateQueries({ queryKey: ["purchases"] });
       qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["stock-alert"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
       toast.success("تم حفظ المرتجع");
     },
@@ -398,6 +402,7 @@ export function useUpdatePurchaseReturn() {
       qc.invalidateQueries({ queryKey: ["contact-balances"] });
       qc.invalidateQueries({ queryKey: ["purchases"] });
       qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["stock-alert"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
       toast.success("تم تحديث المرتجع");
     },
@@ -427,16 +432,7 @@ export function useAddPurchasePayment() {
 
       const ownerIdResolved = requireOwnerId(ownerId);
       const supplierId = args.purchase.supplier_id;
-      let treasuryAccountId = args.treasury_id;
-      {
-        const { data: treasuryRow } = await (supabase.from("treasuries") as any)
-          .select("id, account_id")
-          .eq("id", args.treasury_id)
-          .maybeSingle();
-        if ((treasuryRow as any)?.account_id) {
-          treasuryAccountId = (treasuryRow as any).account_id;
-        }
-      }
+      const treasuryAccountId = await requireTreasuryAccountId(args.treasury_id);
 
       // Fallback (no supplier): legacy direct treasury path
       if (!supplierId) {
@@ -529,6 +525,7 @@ export function useAddPurchasePayment() {
       qc.invalidateQueries({ queryKey: ["treasuries"] });
       qc.invalidateQueries({ queryKey: ["account-balances"] });
       qc.invalidateQueries({ queryKey: ["accounts"] });
+      qc.invalidateQueries({ queryKey: ["stock-alert"] });
       if (res?.surplus && res.surplus > 0.001) {
         toast.success(`تم تسجيل الدفعة وتوزيع ${res.surplus.toFixed(2)} على فواتير المورد الأخرى`);
       } else {

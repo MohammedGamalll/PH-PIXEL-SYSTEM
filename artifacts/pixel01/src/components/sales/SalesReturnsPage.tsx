@@ -10,9 +10,9 @@ import { FilterBar, type FilterField } from "@/components/shared/FilterBar";
 import { exportToCsv, exportToXls } from "@/lib/csv";
 import { useContacts } from "@/hooks/use-contacts";
 import { useEmployeesMap } from "@/hooks/use-employees-map";
-import { useInvoicesByType, useInvoiceItems, useCashierSessions } from "@/hooks/use-invoices";
+import { useInvoicesByType, useCashierSessions } from "@/hooks/use-invoices";
 import { InvoiceDetailsModal } from "./InvoiceDetailsModal";
-import { PrintableInvoice, type PrintMode } from "./PrintableInvoice";
+import { useInvoicePrint } from "@/hooks/use-invoice-print";
 import { useTableSort } from "@/components/shared/useTableSort";
 import { SortableHead } from "@/components/shared/SortableHead";
 
@@ -45,8 +45,6 @@ export function SalesReturnsPage() {
   const printRef = useRef<HTMLDivElement>(null);
 
   const [viewingId, setViewingId] = useState<string | null>(null);
-  const [printingId, setPrintingId] = useState<string | null>(null);
-  const [printMode] = useState<PrintMode>("invoice");
   const [editingReturn, setEditingReturn] = useState<any | null>(null);
   const [editOriginal, setEditOriginal] = useState<any | null>(null);
 
@@ -68,19 +66,6 @@ export function SalesReturnsPage() {
   };
 
   const viewingInvoice = useMemo(() => (rows as any[]).find((r) => r.id === viewingId) || null, [rows, viewingId]);
-  const printingInvoice = useMemo(() => (rows as any[]).find((r) => r.id === printingId) || null, [rows, printingId]);
-  const { data: printItems = [] } = useInvoiceItems(printingId || undefined);
-
-  useEffect(() => {
-    const h = () => setPrintingId(null);
-    window.addEventListener("afterprint", h);
-    return () => window.removeEventListener("afterprint", h);
-  }, []);
-
-  const triggerPrint = (id: string) => {
-    setPrintingId(id);
-    requestAnimationFrame(() => setTimeout(() => window.print(), 150));
-  };
 
   const custName = (id?: string | null, snapshot?: string | null) => {
     const c = (customers as any[]).find((x) => x.id === id);
@@ -88,6 +73,10 @@ export function SalesReturnsPage() {
     if (snapshot) return snapshot;
     return t("sales.filters.cash_customer");
   };
+
+  const { triggerPrint, onModalPrint, printNode } = useInvoicePrint({
+    customerName: (inv) => custName(inv?.customer_id, inv?.customer_name_snapshot),
+  });
 
   const returns = rows as any[];
 
@@ -174,7 +163,7 @@ export function SalesReturnsPage() {
                         <button onClick={() => openEdit(r)} className="h-8 px-2 inline-flex items-center gap-1 text-xs rounded text-white" style={{ backgroundColor: "#10b981" }}>
                           <Pencil className="h-3 w-3" /> تعديل
                         </button>
-                        <button onClick={() => triggerPrint(r.id)} className="h-8 px-2 inline-flex items-center gap-1 text-xs rounded" style={{ backgroundColor: "#fff", border: "1px solid #d1d5db", color: "#374151" }}>
+                        <button onClick={() => { const row = (rows as any[]).find((x) => x.id === r.id); if (row) triggerPrint(row, "invoice"); }} className="h-8 px-2 inline-flex items-center gap-1 text-xs rounded" style={{ backgroundColor: "#fff", border: "1px solid #d1d5db", color: "#374151" }}>
                           <Printer className="h-3 w-3" /> {t("sales.actions.print")}
                         </button>
                       </div>
@@ -203,12 +192,7 @@ export function SalesReturnsPage() {
         invoice={viewingInvoice}
         customerName={viewingInvoice ? custName(viewingInvoice.customer_id, viewingInvoice.customer_name_snapshot) : ""}
         customerPhone={""}
-        onPrint={() => {
-          const id = viewingInvoice?.id;
-          if (!id) return;
-          setViewingId(null);
-          setTimeout(() => triggerPrint(id), 200);
-        }}
+        onPrint={viewingInvoice ? onModalPrint(viewingInvoice, () => setViewingId(null)) : () => {}}
       />
 
       <ReturnFormModal
@@ -222,10 +206,7 @@ export function SalesReturnsPage() {
 
 
 
-      {printingInvoice && (
-        <PrintableInvoice mode={printMode} invoice={printingInvoice} items={printItems as any[]}
-          customerName={custName(printingInvoice.customer_id, printingInvoice.customer_name_snapshot)} customerPhone="" />
-      )}
+      {printNode}
     </div>
   );
 }

@@ -701,13 +701,19 @@ function StockAlertWidget() {
   const { data: items = [], isLoading } = useQuery({
     queryKey: ["stock-alert", user?.id, pwsMap],
     enabled: !!user,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
     queryFn: async () => {
       const { data, error } = await (supabase.from("products") as any)
         .select("id, name, stock, low_stock_threshold, unit, cost, price, main_unit, sub_unit_1, sub_unit_1_ratio, sub_unit_2, sub_unit_2_ratio");
       if (error) throw error;
       return (data ?? [])
         .map((p: any) => ({ ...p, stock: pwsMap[p.id] ?? Number(p.stock ?? 0) }))
-        .filter((p: any) => Number(p.stock || 0) <= Number(p.low_stock_threshold ?? 10))
+        .filter((p: any) => {
+          const threshold = Number(p.low_stock_threshold ?? 0);
+          if (threshold <= 0) return false;
+          return Number(p.stock || 0) <= threshold;
+        })
         .sort((a: any, b: any) => Number(a.stock || 0) - Number(b.stock || 0));
     },
   });

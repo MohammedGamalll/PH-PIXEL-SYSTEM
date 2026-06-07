@@ -12,6 +12,7 @@ import { useTableSort } from "@/components/shared/useTableSort";
 import { exportToCsv, exportToXls } from "@/lib/csv";
 import { useRef } from "react";
 import { InvoiceDetailsModal } from "@/components/sales/InvoiceDetailsModal";
+import { useInvoicePrint } from "@/hooks/use-invoice-print";
 import { PurchaseDetailsModal } from "@/components/purchases/PurchaseDetailsModal";
 
 const INVOICE_SOURCES = new Set(["sale", "sale_return", "invoice"]);
@@ -42,6 +43,9 @@ export function TransactionsLogPage() {
   }, [purchases, purchaseReturns]);
 
   const [invoiceModal, setInvoiceModal] = useState<any | null>(null);
+  const { onModalPrint, printNode } = useInvoicePrint({
+    customerName: (inv) => inv?.customer_name_snapshot ?? "",
+  });
   const [purchaseModal, setPurchaseModal] = useState<any | null>(null);
 
   const fmt = (n: number) => t("accounting.currency", { n: (Number(n) || 0).toFixed(2) });
@@ -167,8 +171,9 @@ export function TransactionsLogPage() {
         onOpenChange={(v) => !v && setInvoiceModal(null)}
         invoice={invoiceModal}
         customerName={invoiceModal?.customer_name_snapshot || ""}
-        onPrint={() => window.print()}
+        onPrint={invoiceModal ? onModalPrint(invoiceModal, () => setInvoiceModal(null)) : () => {}}
       />
+      {printNode}
       <PurchaseDetailsModal
         open={!!purchaseModal}
         onOpenChange={(v) => !v && setPurchaseModal(null)}

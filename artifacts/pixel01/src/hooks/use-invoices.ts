@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useOwnerId } from "@/lib/owner";
 import { friendlyDbError, requireOwnerId } from "@/lib/db-errors";
+import { requireTreasuryAccountId } from "@/lib/treasury-account";
 import { useWarehouseContext } from "@/contexts/WarehouseContext";
 import { toast } from "sonner";
 
@@ -153,6 +154,7 @@ export function useCreateInvoice() {
       qc.invalidateQueries({ queryKey: ["invoices"] });
       qc.invalidateQueries({ queryKey: ["contact-balances"] });
       qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["stock-alert"] });
       toast.success("تم الحفظ");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -184,6 +186,7 @@ export function useDeleteInvoice() {
       qc.invalidateQueries({ queryKey: ["invoices"] });
       qc.invalidateQueries({ queryKey: ["contact-balances"] });
       qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["stock-alert"] });
       toast.success("تم الحذف");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -206,6 +209,7 @@ export function useUpdateInvoice() {
       qc.invalidateQueries({ queryKey: ["invoices"] });
       qc.invalidateQueries({ queryKey: ["contact-balances"] });
       qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["stock-alert"] });
       qc.invalidateQueries({ queryKey: ["product_warehouse_stock"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
       qc.invalidateQueries({ queryKey: ["account-balances"] });
@@ -363,6 +367,7 @@ export function useConvertInvoice() {
       qc.invalidateQueries({ queryKey: ["invoices"] });
       qc.invalidateQueries({ queryKey: ["contact-balances"] });
       qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["stock-alert"] });
       qc.invalidateQueries({ queryKey: ["product_warehouse_stock"] });
       qc.invalidateQueries({ queryKey: ["products_for_purchase"] });
       toast.success("تم التحويل إلى فاتورة بيع");
@@ -718,6 +723,7 @@ export function useCreateSalesReturn() {
       qc.invalidateQueries({ queryKey: ["contact-balances"] });
       qc.invalidateQueries({ queryKey: ["returns_for_original"] });
       qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["stock-alert"] });
       toast.success("تم حفظ المرتجع");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -783,6 +789,7 @@ export function useUpdateSalesReturn() {
       qc.invalidateQueries({ queryKey: ["contact-balances"] });
       qc.invalidateQueries({ queryKey: ["invoice_items"] });
       qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["stock-alert"] });
       toast.success("تم تحديث المرتجع");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -819,6 +826,7 @@ export function useDeleteSalesReturn() {
       qc.invalidateQueries({ queryKey: ["invoices"] });
       qc.invalidateQueries({ queryKey: ["contact-balances"] });
       qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["stock-alert"] });
       toast.success("تم حذف المرتجع");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -996,81 +1004,100 @@ export function useAddInvoicePayment() {
     }) => {
       const total = Number(args.invoice.total || 0);
       const oldPaid = Number(args.invoice.paid_amount || 0);
-      // Cap to total to avoid silent overpayment.
-      const cappedAmount = Math.max(0, Math.min(args.amount, total - oldPaid));
-      if (cappedAmount < args.amount - 1e-6) {
-        toast.warning(`المبلغ المسموح به أقصى ${(total - oldPaid).toFixed(2)} — تم تعديل الدفعة`);
+      const remaining = Math.max(0, total - oldPaid);
+      const amt = Number(args.amount || 0);
+      if (amt <= 0) throw new Error("المبلغ يجب أن يكون أكبر من صفر");
+
+      const ownerIdResolved = requireOwnerId(ownerId);
+      const customerId = args.invoice.customer_id;
+      const treasuryAccountId = await requireTreasuryAccountId(args.treasury_id);
+
+      // Fallback (no customer): legacy direct treasury path
+      if (!customerId) {
+        const applyToThis = Math.min(amt, remaining);
+        const { error: e1 } = await (supabase.from("treasury_transactions") as any).insert({
+          owner_id: ownerIdResolved,
+          treasury_id: args.treasury_id,
+          amount: amt,
+          type: "in",
+          description: args.note ?? `دفعة للفاتورة ${args.invoice.invoice_number}`,
+          reference: args.invoice.id,
+          transaction_date: args.transaction_date ?? new Date().toISOString().slice(0, 10),
+        });
+        if (e1) throw friendlyDbError(e1);
+        const newPaid = oldPaid + applyToThis;
+        const status = newPaid >= total - 1e-6 ? "paid" : newPaid > 0 ? "partial" : "unpaid";
+        const { error: e2 } = await (supabase.from("invoices") as any)
+          .update({ paid_amount: newPaid, payment_status: status, payment_method: args.payment_method ?? args.invoice.payment_method })
+          .eq("id", args.invoice.id);
+        if (e2) throw e2;
+        return { surplus: Math.max(0, amt - applyToThis) };
       }
-      if (cappedAmount <= 0) throw new Error("الفاتورة مدفوعة بالكامل");
 
-      const { error: e1 } = await (supabase.from("treasury_transactions") as any).insert({
-        owner_id: requireOwnerId(ownerId),
-        treasury_id: args.treasury_id,
-        amount: cappedAmount,
-        type: "in",
-        description: args.note ?? `دفعة للفاتورة ${args.invoice.invoice_number}`,
-        reference: args.invoice.id,
-        transaction_date: args.transaction_date ?? new Date().toISOString().slice(0, 10),
-      });
-      if (e1) throw friendlyDbError(e1);
+      const applyToThis = Math.min(amt, remaining);
+      const refNo = `PAY-${Date.now().toString(36).toUpperCase()}`;
+      const { data: payRow, error: cpErr } = await (supabase.from("contact_payments") as any)
+        .insert({
+          owner_id: ownerIdResolved,
+          contact_id: customerId,
+          contact_type: "customer",
+          direction: "in",
+          amount: amt,
+          allocated_amount: applyToThis,
+          payment_method: args.payment_method ?? "cash",
+          treasury_account_id: treasuryAccountId,
+          ref_no: refNo,
+          notes: args.note ?? `دفعة للفاتورة ${args.invoice.invoice_number}`,
+          payment_date: args.transaction_date ?? new Date().toISOString().slice(0, 10),
+          created_by: user!.id,
+        })
+        .select("id")
+        .single();
+      if (cpErr) throw friendlyDbError(cpErr);
 
-      const newPaid = oldPaid + cappedAmount;
-      const status = newPaid >= total - 1e-6 ? "paid" : newPaid > 0 ? "partial" : "unpaid";
-      const { error: e2 } = await (supabase.from("invoices") as any)
-        .update({ paid_amount: newPaid, payment_status: status, payment_method: args.payment_method ?? args.invoice.payment_method })
-        .eq("id", args.invoice.id);
-      if (e2) throw e2;
+      if (applyToThis > 0) {
+        const newPaid = oldPaid + applyToThis;
+        const status = newPaid >= total - 1e-6 ? "paid" : newPaid > 0 ? "partial" : "unpaid";
+        const { error: e2 } = await (supabase.from("invoices") as any)
+          .update({ paid_amount: newPaid, payment_status: status, payment_method: args.payment_method ?? args.invoice.payment_method })
+          .eq("id", args.invoice.id);
+        if (e2) throw friendlyDbError(e2);
 
-      if (args.invoice.customer_id) {
-        const { data: tr } = await (supabase.from("treasuries") as any)
-          .select("account_id")
-          .eq("id", args.treasury_id)
-          .maybeSingle();
-        const { data: cpRow, error: cpErr } = await (supabase.from("contact_payments") as any)
-          .insert({
-            owner_id: requireOwnerId(ownerId),
-            contact_id: args.invoice.customer_id,
-            contact_type: "customer",
-            direction: "in",
-            amount: cappedAmount,
-            allocated_amount: cappedAmount,
-            payment_method: args.payment_method ?? "cash",
-            treasury_account_id: tr?.account_id ?? null,
-            ref_no: args.invoice.invoice_number,
-            notes: args.note ?? `دفعة للفاتورة ${args.invoice.invoice_number}`,
-            payment_date: args.transaction_date ?? new Date().toISOString().slice(0, 10),
-            created_by: user!.id,
-          })
-          .select("id")
-          .single();
-        if (cpErr) throw cpErr;
-        if (cpRow?.id) {
+        if (payRow?.id) {
           await (supabase.from("contact_payment_invoice_allocations") as any).insert({
-            owner_id: requireOwnerId(ownerId),
-            contact_payment_id: cpRow.id,
+            owner_id: ownerIdResolved,
+            contact_payment_id: payRow.id,
             document_type: "invoice",
             document_id: args.invoice.id,
-            allocated_amount: cappedAmount,
+            allocated_amount: applyToThis,
           });
         }
       }
 
-      // Auto-allocate any leftover (or this same payment) to oldest unpaid invoices for the same customer
+      const surplus = Math.max(0, amt - applyToThis);
       try {
-        const { allocateContactPayment, resettleContactDebt } = await import("@/lib/debt-allocation.functions");
-        if (args.invoice.customer_id) {
-          await resettleContactDebt({ data: { contact_id: args.invoice.customer_id, direction: "in" } });
-        }
-        void allocateContactPayment;
+        const { resettleContactDebt } = await import("@/lib/debt-allocation.functions");
+        await resettleContactDebt({ data: { contact_id: customerId, direction: "in" } });
       } catch (err) {
         console.warn("debt resettle failed", err);
       }
+      return { surplus };
     },
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       qc.invalidateQueries({ queryKey: ["invoices"] });
       qc.invalidateQueries({ queryKey: ["contact-balances"] });
       qc.invalidateQueries({ queryKey: ["invoice_payments"] });
-      toast.success("تم تسجيل الدفعة");
+      qc.invalidateQueries({ queryKey: ["contact-payments"] });
+      qc.invalidateQueries({ queryKey: ["contact-view"] });
+      qc.invalidateQueries({ queryKey: ["treasuries"] });
+      qc.invalidateQueries({ queryKey: ["account-balances"] });
+      qc.invalidateQueries({ queryKey: ["accounts"] });
+      qc.invalidateQueries({ queryKey: ["stock-alert"] });
+      if (res?.surplus && res.surplus > 0.001) {
+        toast.success(`تم تسجيل الدفعة — الفائض ${res.surplus.toFixed(2)} رصيد للعميل`);
+      } else {
+        toast.success("تم تسجيل الدفعة");
+      }
     },
     onError: (e: Error) => toast.error(e.message),
   });

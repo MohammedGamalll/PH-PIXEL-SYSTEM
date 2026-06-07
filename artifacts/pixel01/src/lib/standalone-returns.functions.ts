@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { requireTreasuryAccountId } from "@/lib/treasury-account";
 
 /** Prefix for contact_payment notes created by account standalone returns. */
 export const STANDALONE_RETURN_NOTE_PREFIX = "\u0645\u0631\u062A\u062C\u0639 \u062D\u0631";
@@ -112,12 +113,9 @@ export const createStandaloneReturn = async ({ data }: {
     const direction = data.return_type === "sales" ? "in" : "out";
 
     let treasuryAccountId: string | null = null;
-    const { data: tr } = await (supabase as any)
-      .from("treasuries")
-      .select("account_id")
-      .eq("id", data.treasury_id)
-      .maybeSingle();
-    treasuryAccountId = (tr?.account_id as string | null) ?? null;
+    if (data.treasury_id) {
+      treasuryAccountId = await requireTreasuryAccountId(data.treasury_id);
+    }
 
     const typeLabel = data.return_type === "sales" ? "\u0645\u0628\u064A\u0639\u0627\u062A" : "\u0645\u0634\u062A\u0631\u064A\u0627\u062A";
     const { error: cpErr } = await (supabase as any).from("contact_payments").insert({

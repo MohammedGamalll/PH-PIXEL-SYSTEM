@@ -15,6 +15,7 @@ import { ArrowUpDown } from "lucide-react";
 import { useTableSort } from "@/components/shared/useTableSort";
 import { SortableHead } from "@/components/shared/SortableHead";
 import { InvoiceDetailsModal } from "./InvoiceDetailsModal";
+import { useInvoicePrint } from "@/hooks/use-invoice-print";
 
 function useDetailedRows() {
   const { user } = useAuth();
@@ -229,6 +230,10 @@ export function DetailedSalesReportPage() {
     const c = id ? custMap.get(id) : null;
     return c ? [c.first_name, c.last_name].filter(Boolean).join(" ") || c.business_name || c.contact_id : t("sales.filters.cash_customer");
   };
+
+  const { onModalPrint, printNode } = useInvoicePrint({
+    customerName: (inv) => custName(inv?.customer_id) || inv?.customer_name_snapshot || "",
+  });
 
   const enriched = useMemo(() => (items as any[]).map((it) => {
     const inv = it.invoice;
@@ -692,8 +697,9 @@ export function DetailedSalesReportPage() {
         onOpenChange={(v) => !v && setViewInvoice(null)}
         invoice={viewInvoice}
         customerName={viewInvoice ? custName(viewInvoice.customer_id) : ""}
-        onPrint={() => {}}
+        onPrint={viewInvoice ? onModalPrint(viewInvoice, () => setViewInvoice(null)) : () => {}}
       />
+      {printNode}
     </div>
   );
 }

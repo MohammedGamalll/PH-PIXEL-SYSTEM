@@ -9,6 +9,7 @@ import { X } from "lucide-react";
 import { useAutoRef } from "@/hooks/use-auto-ref";
 import { useOwnerId } from "@/lib/owner";
 import { friendlyDbError, requireOwnerId } from "@/lib/db-errors";
+import { requireTreasuryAccountId } from "@/lib/treasury-account";
 import { allocateContactPayment, resettleContactDebt } from "@/lib/debt-allocation.functions";
 
 
@@ -103,6 +104,7 @@ export function ContactPaymentModal({ open, direction, contactType, titleOverrid
     setSaving(true);
     try {
       const ownerIdResolved = requireOwnerId(ownerId);
+      const treasuryAccountId = await requireTreasuryAccountId(treasuryId);
       const { error } = await (supabase.from("contact_payments") as any).insert({
         owner_id: ownerIdResolved,
         contact_id: contactId,
@@ -110,7 +112,7 @@ export function ContactPaymentModal({ open, direction, contactType, titleOverrid
         direction,
         amount: amt,
         payment_method: method,
-        treasury_account_id: treasuryId || null,
+        treasury_account_id: treasuryAccountId,
         session_id: sessionId || null,
         ref_no: refNo || null,
         notes: notes || null,

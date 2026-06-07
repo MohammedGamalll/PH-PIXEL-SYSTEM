@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/products/PageHeader";
 import { ReportTable } from "@/components/reports/ReportTable";
 import { ReceiptDetailsModal } from "@/components/reports/ReceiptDetailsModal";
 import { InvoiceDetailsModal } from "@/components/sales/InvoiceDetailsModal";
+import { useInvoicePrint } from "@/hooks/use-invoice-print";
 import type { ColumnDef } from "@/components/products/TableToolbar";
 import { useContacts } from "@/hooks/use-contacts";
 import { useCustomerGroups } from "@/hooks/use-customer-groups";
@@ -46,6 +47,9 @@ function ReceiptsReportPage() {
   const { data: groups = [] } = useCustomerGroups();
   const [inspect, setInspect] = useState<any | null>(null);
   const [openInvoice, setOpenInvoice] = useState<any | null>(null);
+  const { onModalPrint, printNode } = useInvoicePrint({
+    customerName: (inv) => inv?.customer_name_snapshot ?? "",
+  });
 
   // Filters
   const [filterCustomer, setFilterCustomer] = useState("");
@@ -268,8 +272,9 @@ function ReceiptsReportPage() {
         customerName={openInvoice?.customerName ?? ""}
         customerPhone={openInvoice?.customerPhone ?? ""}
         customerAddress={openInvoice?.customerAddress ?? ""}
-        onPrint={() => {}}
+        onPrint={openInvoice?._raw ? onModalPrint(openInvoice._raw, () => setOpenInvoice(null)) : () => {}}
       />
+      {printNode}
     </div>
   );
 }

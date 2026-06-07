@@ -23,7 +23,24 @@ async function callAdminApi(path: string, body: Record<string, any>): Promise<an
     },
     body: JSON.stringify(body),
   });
-  const json = await res.json();
+
+  const contentType = res.headers.get("content-type") || "";
+  const raw = await res.text();
+  if (!contentType.includes("application/json")) {
+    throw new Error(
+      raw.trim().startsWith("<")
+        ? "خادم API غير متاح — تحقق من نشر الخادم على Vercel"
+        : (raw.trim() || `فشل الطلب (${res.status})`),
+    );
+  }
+
+  let json: any;
+  try {
+    json = raw ? JSON.parse(raw) : {};
+  } catch {
+    throw new Error("استجابة غير صالحة من خادم API");
+  }
+
   if (!res.ok) throw new Error(json.error || `فشل الطلب (${res.status})`);
   return json;
 }

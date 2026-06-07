@@ -8,6 +8,7 @@ import { ReportTable } from "@/components/reports/ReportTable";
 import type { ColumnDef } from "@/components/products/TableToolbar";
 import { useI18n } from "@/lib/i18n";
 import { InvoiceDetailsModal } from "@/components/sales/InvoiceDetailsModal";
+import { useInvoicePrint } from "@/hooks/use-invoice-print";
 import { PurchaseDetailsModal } from "@/components/purchases/PurchaseDetailsModal";
 
 export const Route = createFileRoute("/_authenticated/reports/activity-log")({
@@ -103,6 +104,9 @@ function ActivityLogPage() {
   const [excludeAuth, setExcludeAuth] = useState(true);
   const [viewInvoice, setViewInvoice] = useState<any | null>(null);
   const [viewPurchase, setViewPurchase] = useState<any | null>(null);
+  const { onModalPrint, printNode } = useInvoicePrint({
+    customerName: (inv) => inv?.customer_name_snapshot ?? "",
+  });
 
 
   const { data: logs = [] } = useQuery({
@@ -269,8 +273,9 @@ function ActivityLogPage() {
         onOpenChange={(v) => !v && setViewInvoice(null)}
         invoice={viewInvoice}
         customerName={viewInvoice?.customer_name_snapshot || ""}
-        onPrint={() => {}}
+        onPrint={viewInvoice ? onModalPrint(viewInvoice, () => setViewInvoice(null)) : () => {}}
       />
+      {printNode}
       <PurchaseDetailsModal
         open={!!viewPurchase}
         onOpenChange={(v) => !v && setViewPurchase(null)}

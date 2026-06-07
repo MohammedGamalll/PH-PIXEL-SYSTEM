@@ -56,6 +56,8 @@ export function AddPurchasePaymentModal({ open, onOpenChange, purchase, supplier
   };
 
   const fmt = (n: number) => `${n.toFixed(2)} ج.م`;
+  const amountNum = Number(amount) || 0;
+  const overPaid = Math.max(0, amountNum - remaining);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -121,6 +123,11 @@ export function AddPurchasePaymentModal({ open, onOpenChange, purchase, supplier
               <Label>ملاحظة</Label>
               <Input value={note} onChange={(e) => setNote(e.target.value)} />
             </div>
+            {overPaid > 0.0001 && remaining > 0 && (
+              <div className="col-span-2 text-sm text-cyan-800 font-medium p-2 bg-cyan-50 border border-cyan-200 rounded">
+                زيادة الدفع: {fmt(overPaid)} (سيُسجَّل كرصيد في حساب المورد)
+              </div>
+            )}
           </div>
           {Number(amount) > remaining && remaining > 0 && (
             <div className="text-xs text-blue-700 mt-2">

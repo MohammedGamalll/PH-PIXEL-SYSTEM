@@ -12,6 +12,7 @@ import { useI18n } from "@/lib/i18n";
 import { useProductBatches } from "@/hooks/use-product-batches";
 import { BatchChips } from "@/components/products/BatchChips";
 import { InvoiceDetailsModal } from "@/components/sales/InvoiceDetailsModal";
+import { useInvoicePrint } from "@/hooks/use-invoice-print";
 import { PurchaseDetailsModal } from "@/components/purchases/PurchaseDetailsModal";
 import { ArrowRight, Package } from "lucide-react";
 
@@ -533,6 +534,12 @@ function ItemCardPage() {
       "نقدي"
     : "";
 
+  const { onModalPrint, printNode } = useInvoicePrint({
+    customerName: () => openCustomerName,
+    customerPhone: () => openInvoiceCustomer?.phone ?? "",
+    customerAddress: () => openInvoiceCustomer?.address ?? "",
+  });
+
   const [openPurchaseId, setOpenPurchaseId] = useState<string | null>(null);
   const { data: openPurchase } = useQuery({
     queryKey: ["product-card-purchase", openPurchaseId],
@@ -821,8 +828,9 @@ function ItemCardPage() {
         customerName={openCustomerName}
         customerPhone={openInvoiceCustomer?.phone ?? ""}
         customerAddress={openInvoiceCustomer?.address ?? ""}
-        onPrint={() => {}}
+        onPrint={openInvoice ? onModalPrint(openInvoice, () => setOpenInvoiceId(null)) : () => {}}
       />
+      {printNode}
       <PurchaseDetailsModal
         open={!!openPurchaseId}
         onOpenChange={(v) => !v && setOpenPurchaseId(null)}

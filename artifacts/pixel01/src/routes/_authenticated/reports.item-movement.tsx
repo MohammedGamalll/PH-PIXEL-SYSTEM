@@ -9,6 +9,7 @@ import type { ColumnDef } from "@/components/products/TableToolbar";
 import { useI18n } from "@/lib/i18n";
 import { useContacts } from "@/hooks/use-contacts";
 import { InvoiceDetailsModal } from "@/components/sales/InvoiceDetailsModal";
+import { useInvoicePrint } from "@/hooks/use-invoice-print";
 import { PurchaseDetailsModal } from "@/components/purchases/PurchaseDetailsModal";
 
 export const Route = createFileRoute("/_authenticated/reports/item-movement")({
@@ -79,6 +80,9 @@ function ItemMovementPage() {
   const [sTo, setSTo] = useState("");
   const [activeIdx, setActiveIdx] = useState(-1);
   const [viewInvoice, setViewInvoice] = useState<any | null>(null);
+  const { onModalPrint, printNode } = useInvoicePrint({
+    customerName: (inv) => inv?.customer_name_snapshot ?? "",
+  });
   const [viewPurchase, setViewPurchase] = useState<any | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
 
@@ -340,8 +344,9 @@ function ItemMovementPage() {
         onOpenChange={(v) => !v && setViewInvoice(null)}
         invoice={viewInvoice}
         customerName={viewInvoice?.customer_name_snapshot || ""}
-        onPrint={() => {}}
+        onPrint={viewInvoice ? onModalPrint(viewInvoice, () => setViewInvoice(null)) : () => {}}
       />
+      {printNode}
       <PurchaseDetailsModal
         open={!!viewPurchase}
         onOpenChange={(v) => !v && setViewPurchase(null)}

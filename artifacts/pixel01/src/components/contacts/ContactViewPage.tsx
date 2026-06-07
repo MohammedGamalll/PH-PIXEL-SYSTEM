@@ -39,6 +39,7 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { resettleContactDebt } from "@/lib/debt-allocation.functions";
 import { InvoiceDetailsModal } from "@/components/sales/InvoiceDetailsModal";
+import { useInvoicePrint } from "@/hooks/use-invoice-print";
 import { PurchaseDetailsModal } from "@/components/purchases/PurchaseDetailsModal";
 import { PaymentDetailsModal } from "@/components/contacts/PaymentDetailsModal";
 
@@ -352,6 +353,9 @@ function AccountTab({ contact, scope, totalDue, gross }: { contact: any; scope: 
   const { data: sys } = useSystemLedger(scope);
   const [viewingInvoice, setViewingInvoice] = useState<any | null>(null);
   const [viewingPurchase, setViewingPurchase] = useState<any | null>(null);
+  const { onModalPrint: onAccountInvoicePrint, printNode: accountPrintNode } = useInvoicePrint({
+    customerName: (inv) => inv?.customer_name_snapshot ?? "",
+  });
 
   const invoiceByRef = useMemo(() => {
     const m: Record<string, any> = {};
@@ -703,9 +707,10 @@ function AccountTab({ contact, scope, totalDue, gross }: { contact: any; scope: 
           onOpenChange={(v) => !v && setViewingInvoice(null)}
           invoice={viewingInvoice}
           customerName={viewingInvoice?.customer_name_snapshot || ''}
-          onPrint={() => {}}
+          onPrint={viewingInvoice ? onAccountInvoicePrint(viewingInvoice, () => setViewingInvoice(null)) : () => {}}
         />
       )}
+      {accountPrintNode}
       {viewingPurchase && (
         <PurchaseDetailsModal
           open={!!viewingPurchase}
@@ -764,6 +769,9 @@ function ContactDocsTable({
   const [cols, setCols] = useState(baseCols);
   const [filters, setFilters] = useState({ from: "", to: "", payment_status: "", payment_method: "", shipping_status: "" });
   const [viewing, setViewing] = useState<any | null>(null);
+  const { onModalPrint, printNode } = useInvoicePrint({
+    customerName: (inv) => inv?.customer_name_snapshot ?? contactName ?? "",
+  });
   const printRef = useRef<HTMLDivElement>(null);
 
   const filtered = useMemo(() => (srcRows as any[]).filter((r) => {
@@ -907,11 +915,12 @@ function ContactDocsTable({
           onOpenChange={(v) => !v && setViewing(null)}
           invoice={viewing}
           customerName={viewing?.customer_name_snapshot || ""}
-          onPrint={() => {}}
+          onPrint={viewing && isSale ? onModalPrint(viewing, () => setViewing(null)) : () => {}}
         />
       ) : (
         <PurchaseDetailsModal open={!!viewing} onOpenChange={(v) => !v && setViewing(null)} purchase={viewing} supplierName={contactName} />
       )}
+      {isSale ? printNode : null}
 
     </div>
   );

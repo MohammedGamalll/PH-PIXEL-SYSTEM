@@ -134,7 +134,9 @@ function PaymentsReportPage() {
           paid_on: p.created_at ? formatDateTime(p.created_at) : (p.purchase_date ? formatDateTime(p.purchase_date) : t("reports.dash")),
           _date: p.purchase_date ? String(p.purchase_date).slice(0, 10) : "",
           paid_amount: Number(p.paid_amount || 0),
-          supplier: p.supplier_id ? supMap.get(p.supplier_id) || t("reports.dash") : t("reports.dash"),
+          supplier: p.supplier_id
+            ? (supMap.get(p.supplier_id) || p.supplier_name_snapshot || t("reports.dash"))
+            : (p.supplier_name_snapshot || t("reports.dash")),
           supplier_id: p.supplier_id || "",
           method: p.payment_method || t("reports.dash"),
           purchase_no: p.purchase_number || t("reports.dash"),
@@ -167,7 +169,9 @@ function PaymentsReportPage() {
 
   const supplierName = useMemo(() => {
     if (!openPurchase) return "";
-    return openPurchase._raw?.supplier_id ? supMap.get(openPurchase._raw.supplier_id) || "" : "";
+    const raw = openPurchase._raw;
+    if (!raw?.supplier_id && !raw?.supplier_name_snapshot) return "";
+    return supMap.get(raw.supplier_id) || raw.supplier_name_snapshot || "";
   }, [openPurchase, supMap]);
 
   return (

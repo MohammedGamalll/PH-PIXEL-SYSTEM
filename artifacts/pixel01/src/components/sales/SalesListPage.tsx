@@ -295,7 +295,7 @@ export function SalesListPage({ mode }: { mode: InvoiceType }) {
   const renderActions = (r: any) => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="h-8 px-3 inline-flex items-center gap-1 text-xs rounded text-white" style={{ backgroundColor: "#3b82f6" }}>
+        <button className="h-8 px-3 inline-flex items-center gap-1 text-xs rounded text-white" style={{ backgroundColor: "#3b82f6", whiteSpace: "nowrap" }}>
           {t("sales.actions.options")} <ChevronDown className="h-3 w-3" />
         </button>
       </DropdownMenuTrigger>

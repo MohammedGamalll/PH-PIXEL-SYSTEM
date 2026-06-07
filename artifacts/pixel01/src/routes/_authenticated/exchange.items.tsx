@@ -8,9 +8,10 @@ import { useTreasuries } from "@/hooks/use-invoices";
 import { useOwnerId } from "@/lib/owner";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
+import { requireTreasuryAccountId } from "@/lib/treasury-account";
 import { baseUnitsPer, toBase, formatBaseQuantity, type UnitLevel, unitOptions } from "@/lib/units";
 import { normalizeArabicText } from "@/lib/arabic";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 export const Route = createFileRoute("/_authenticated/exchange/items")({
   component: ItemExchangePage,
@@ -49,6 +50,7 @@ function rowTotal(r: ExchangeRow): number {
 function ItemExchangePage() {
   const ownerId = useOwnerId();
   const { user } = useAuth();
+  const qc = useQueryClient();
   const [contactScope, setContactScope] = useState<"customer" | "supplier">("customer");
   const { data: contacts = [] } = useContacts(contactScope);
   const { data: products = [] } = useQuery({
@@ -228,6 +230,7 @@ function ItemExchangePage() {
         });
         if (txErr) throw txErr;
 
+        const treasuryAccountId = await requireTreasuryAccountId(treasuryId);
         const contactDirection = txType === "in" ? "out" : "in";
         const { error: cpErr } = await (supabase.from("contact_payments") as any).insert({
           owner_id: ownerId,
@@ -238,7 +241,7 @@ function ItemExchangePage() {
           amount: txAmount,
           allocated_amount: txAmount,
           payment_method: "cash",
-          treasury_account_id: selectedTreasury?.account_id ?? null,
+          treasury_account_id: treasuryAccountId,
           payment_date: exchangeDate,
           ref_no: exchangeRef,
           notes: notes ? `${notes} | فرق تبادل أصناف ${exchangeRef}` : `فرق تبادل أصناف ${exchangeRef}`,
@@ -248,6 +251,9 @@ function ItemExchangePage() {
       }
 
       toast.success("تم تنفيذ تبادل الأصناف وتحديث المخزون والحسابات");
+      qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["stock-alert"] });
+      qc.invalidateQueries({ queryKey: ["product_warehouse_stock"] });
       setIncomingRows([]);
       setOutgoingRows([]);
       setNotes("");

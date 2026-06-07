@@ -2,6 +2,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { resettleContactDebt } from "@/lib/debt-allocation.functions";
 import { friendlyDbError, requireOwnerId } from "@/lib/db-errors";
+import { resolveTreasuryAccountId } from "@/lib/treasury-account";
 
 const OVERPAY_EPS = 0.0001;
 
@@ -21,17 +22,6 @@ export type RecordContactDocumentPaymentArgs = {
   paymentDate?: string | null;
 };
 
-async function resolveTreasuryAccountId(accountOrTreasuryId: string | null | undefined): Promise<string | null> {
-  const id = String(accountOrTreasuryId || "").trim();
-  if (!id) return null;
-  const { data: treasuryRow } = await (supabase.from("treasuries") as any)
-    .select("id, account_id")
-    .eq("id", id)
-    .maybeSingle();
-  if ((treasuryRow as any)?.account_id) return (treasuryRow as any).account_id;
-  return id;
-}
-
 /**
  * Record one contact_payment for the full amount paid on a new invoice/purchase.
  * Allocates up to the document total; surplus stays as credit via resettleContactDebt.
@@ -43,7 +33,9 @@ export async function recordContactDocumentPayment(args: RecordContactDocumentPa
 
   const ownerId = requireOwnerId(args.ownerId);
   const payRef = `PAY-${Date.now().toString(36).toUpperCase()}`;
-  const treasuryAccountId = await resolveTreasuryAccountId(args.treasuryAccountId);
+  const treasuryAccountId = args.treasuryAccountId
+    ? await resolveTreasuryAccountId(args.treasuryAccountId, { required: true })
+    : null;
   const surplus = Math.max(0, paidAmount - appliedPaid);
 
   const { data: payRow, error: ePay } = await (supabase.from("contact_payments") as any)

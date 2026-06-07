@@ -347,6 +347,7 @@ export function StandaloneReturnPage() {
       setMethodDialogOpen(false);
       setContactId("");
       qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["stock-alert"] });
       qc.invalidateQueries({ queryKey: ["products-for-standalone-return"] });
       qc.invalidateQueries({ queryKey: ["product_warehouse_stock"] });
       qc.invalidateQueries({ queryKey: ["treasuries"] });

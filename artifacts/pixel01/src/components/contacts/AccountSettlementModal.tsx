@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { X, Wallet } from "lucide-react";
 import { friendlyDbError, requireOwnerId } from "@/lib/db-errors";
+import { requireTreasuryAccountId } from "@/lib/treasury-account";
 import { allocateContactPayment, resettleContactDebt } from "@/lib/debt-allocation.functions";
 
 type Scope = "customer" | "supplier" | "both";
@@ -121,6 +122,7 @@ export function AccountSettlementModal({ open, onClose, contact, scope, due, tot
       // 2. Insert actual payment if any
       if (finalPaid > 0) {
         const note = `تسوية حساب${notes ? ` - ${notes}` : ""}`;
+        const treasuryAccountId = await requireTreasuryAccountId(treasuryId);
         const { error: err2 } = await (supabase.from("contact_payments") as any).insert({
           owner_id: ownerIdResolved,
           contact_id: contact.id,
@@ -129,7 +131,7 @@ export function AccountSettlementModal({ open, onClose, contact, scope, due, tot
           direction,
           amount: finalPaid,
           payment_method: method,
-          treasury_account_id: treasuryId || null,
+          treasury_account_id: treasuryAccountId,
           notes: note,
           created_by: user!.id,
         });

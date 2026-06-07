@@ -1,6 +1,9 @@
 {
-  "buildCommand": "pnpm --filter @workspace/pixel01 run build",
+  "buildCommand": "pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/pixel01 run build",
   "outputDirectory": "artifacts/pixel01/dist/public",
   "installCommand": "pnpm install",
-  "rewrites": [{ "source": "/((?!assets/).*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api" },
+    { "source": "/((?!api/|assets/).*)", "destination": "/index.html" }
+  ]
 }
