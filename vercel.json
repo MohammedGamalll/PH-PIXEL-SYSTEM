@@ -3,7 +3,7 @@
   "outputDirectory": "artifacts/pixel01/dist/public",
   "installCommand": "pnpm install",
   "functions": {
-    "api/index.ts": {
+    "api/index.js": {
       "includeFiles": "artifacts/api-server/dist/**"
     }
   },
