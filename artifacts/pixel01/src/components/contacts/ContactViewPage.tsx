@@ -372,10 +372,11 @@ function AccountTab({ contact, scope, totalDue, gross }: { contact: any; scope: 
   const openRef = (ref: string | number) => {
     const refStr = String(ref);
     if (!refStr || refStr === '-') return;
-    if (scope === 'customer') {
+    if (scope === 'customer' || scope === 'both') {
       const inv = invoiceByRef[refStr];
-      if (inv) { setViewingInvoice(inv); }
-    } else {
+      if (inv) { setViewingInvoice(inv); return; }
+    }
+    if (scope === 'supplier' || scope === 'both') {
       const pur = purchaseByRef[refStr];
       if (pur) { setViewingPurchase(pur); }
     }

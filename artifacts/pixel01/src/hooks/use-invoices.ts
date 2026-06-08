@@ -834,28 +834,23 @@ export function useDeleteSalesReturn() {
 }
 
 // ────────── Treasury / payments ──────────
-// Treasuries are auto-synced from cash-equivalent accounts (see DB trigger
-// sync_treasury_from_account). The dropdown lists active treasuries with
-// the linked account's name.
-export function useTreasuries() {
-  const { user } = useAuth();
-  const ownerId = useOwnerId();
-  return useQuery({
-    queryKey: ["treasuries", ownerId],
-    enabled: !!user && !!ownerId,
-    queryFn: async () => {
-      const { data, error } = await (supabase.from("treasuries") as any)
-        .select("id, name, balance, account_id, currency, is_closed")
-        .eq("owner_id", ownerId)
-        .eq("is_closed", false)
-        .order("name");
-      if (error) throw error;
-      return (data ?? []) as any[];
-    },
+export { useTreasuries } from "@/hooks/use-linked-treasuries";
+
+
+
+function paymentNearMatch(
+  amount: number,
+  ts: string | null | undefined,
+  rows: { amount: number; created_at?: string | null; transaction_date?: string | null }[],
+  windowMs = 10_000,
+) {
+  const target = new Date(ts || 0).getTime();
+  if (!Number.isFinite(target)) return false;
+  return rows.some((r) => {
+    const rowTs = new Date(r.created_at || r.transaction_date || 0).getTime();
+    return Math.abs(Number(r.amount) - amount) < 0.01 && Math.abs(rowTs - target) < windowMs;
   });
 }
-
-
 
 export function useInvoicePayments(invoiceId?: string) {
   const { user } = useAuth();
@@ -863,15 +858,27 @@ export function useInvoicePayments(invoiceId?: string) {
     queryKey: ["invoice_payments", invoiceId],
     enabled: !!user && !!invoiceId,
     queryFn: async () => {
-      // 1) Direct treasury transactions tied to this invoice
-      const { data: tx, error } = await (supabase.from("treasury_transactions") as any)
-        .select("*")
-        .eq("reference", invoiceId)
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      const txRows = (tx ?? []) as any[];
+      const [txRes, allocRes, jeRes] = await Promise.all([
+        (supabase.from("treasury_transactions") as any)
+          .select("*")
+          .eq("reference", invoiceId)
+          .order("created_at", { ascending: false }),
+        (supabase.from("contact_payment_invoice_allocations") as any)
+          .select("id, contact_payment_id, allocated_amount, created_at")
+          .eq("document_id", invoiceId)
+          .eq("document_type", "invoice"),
+        (supabase.from("journal_entries") as any)
+          .select("id, entry_date, created_at, description, ref_no, payment_method, source_type, source_id")
+          .eq("source_id", invoiceId)
+          .in("source_type", ["sale_payment", "sale_return_payment"])
+          .order("created_at", { ascending: false }),
+      ]);
+      if (txRes.error) throw txRes.error;
 
-      // attach original_ref_no for reversals
+      const txRows = (txRes.data ?? []) as any[];
+      const allocRows = (allocRes.data ?? []) as any[];
+      const jeRows = (jeRes.data ?? []) as any[];
+
       const origTxIds = Array.from(new Set(txRows.filter((r) => r.original_transaction_id).map((r) => r.original_transaction_id)));
       if (origTxIds.length) {
         const { data: origs } = await (supabase.from("treasury_transactions") as any)
@@ -880,22 +887,44 @@ export function useInvoicePayments(invoiceId?: string) {
         for (const r of txRows) if (r.original_transaction_id) (r as any).original_ref_no = m.get(r.original_transaction_id) ?? null;
       }
 
-      const merged: any[] = txRows.map((t) => ({ ...t, source: "treasury" }));
+      const payIds = Array.from(new Set(allocRows.map((a) => a.contact_payment_id)));
+      const payMap = new Map<string, any>();
+      if (payIds.length) {
+        const { data: pays } = await (supabase.from("contact_payments") as any)
+          .select("id, payment_date, payment_method, ref_no, notes, direction, created_at")
+          .in("id", payIds);
+        for (const p of pays ?? []) payMap.set(p.id, p);
+      }
 
-      // 2) Journal entries created by trg_sync_invoice_payment_delta when invoice
-      // is created/updated with paid_amount > 0 (no treasury_transactions row exists).
-      const { data: jes } = await (supabase.from("journal_entries") as any)
-        .select("id, entry_date, created_at, description, ref_no, payment_method, source_type, source_id")
-        .eq("source_id", invoiceId)
-        .in("source_type", ["sale_payment", "sale_return_payment"])
-        .order("created_at", { ascending: false });
-      const jeRows = (jes ?? []) as any[];
+      const seenPayIds = new Set<string>();
+      const merged: any[] = [];
+      for (const a of allocRows) {
+        if (seenPayIds.has(a.contact_payment_id)) continue;
+        seenPayIds.add(a.contact_payment_id);
+        const p: any = payMap.get(a.contact_payment_id) ?? {};
+        merged.push({
+          id: a.id,
+          source: "contact_payment",
+          amount: Number(a.allocated_amount || 0),
+          transaction_date: p.payment_date ?? a.created_at,
+          created_at: p.created_at ?? a.created_at,
+          description: p.notes ?? `دفعة للفاتورة`,
+          ref_no: p.ref_no ?? null,
+          payment_method: p.payment_method ?? "cash",
+          type: p.direction === "out" ? "out" : "in",
+        });
+      }
+
+      for (const t of txRows) {
+        if (paymentNearMatch(Number(t.amount || 0), t.created_at, merged)) continue;
+        merged.push({ ...t, source: "treasury" });
+      }
+
       if (jeRows.length) {
         const jeIds = jeRows.map((j) => j.id);
         const { data: lines } = await (supabase.from("journal_entry_lines") as any)
           .select("journal_entry_id, debit, credit, account_id")
           .in("journal_entry_id", jeIds);
-        // Pull cash/bank account types so we use the cash leg amount as the payment amount.
         const acctIds = Array.from(new Set((lines ?? []).map((l: any) => l.account_id)));
         let cashAcctSet = new Set<string>();
         if (acctIds.length) {
@@ -913,15 +942,7 @@ export function useInvoicePayments(invoiceId?: string) {
           arr.push(l);
           byJe.set(l.journal_entry_id, arr);
         }
-        const treasuryIds = new Set(txRows.map((r) => r.id));
-        // Dedup: skip JEs whose (type, amount) matches a treasury tx created within ±10s
-        // (treasury insert + journal trigger fire near-simultaneously for same payment).
-        const txKeys = txRows.map((r) => ({
-          key: `${r.type}|${Number(r.amount || 0).toFixed(2)}`,
-          ts: new Date(r.created_at).getTime(),
-        }));
         for (const je of jeRows) {
-          if (treasuryIds.has(je.id)) continue;
           const ls = byJe.get(je.id) ?? [];
           let amount = 0;
           for (const l of ls) {
@@ -936,11 +957,8 @@ export function useInvoicePayments(invoiceId?: string) {
               if (v > amount) amount = v;
             }
           }
+          if (paymentNearMatch(amount, je.created_at, merged)) continue;
           const jeType = je.source_type === "sale_return_payment" ? "out" : "in";
-          const jeKey = `${jeType}|${Number(amount).toFixed(2)}`;
-          const jeTs = new Date(je.created_at).getTime();
-          const mirrored = txKeys.some((k) => k.key === jeKey && Math.abs(k.ts - jeTs) < 10_000);
-          if (mirrored) continue;
           merged.push({
             id: je.id,
             source: "journal",
@@ -951,34 +969,6 @@ export function useInvoicePayments(invoiceId?: string) {
             ref_no: je.ref_no,
             payment_method: je.payment_method,
             type: jeType,
-          });
-        }
-      }
-
-      // 3) Customer/supplier credit allocated to this invoice via contact_payment_invoice_allocations
-      const { data: allocs } = await (supabase.from("contact_payment_invoice_allocations") as any)
-        .select("id, contact_payment_id, allocated_amount, created_at, document_type")
-        .eq("document_id", invoiceId)
-        .in("document_type", ["invoice", "purchase"]);
-      const allocRows = (allocs ?? []) as any[];
-      if (allocRows.length) {
-        const payIds = Array.from(new Set(allocRows.map((a) => a.contact_payment_id)));
-        const { data: pays } = await (supabase.from("contact_payments") as any)
-          .select("id, payment_date, payment_method, ref_no, notes, direction")
-          .in("id", payIds);
-        const payMap = new Map((pays ?? []).map((p: any) => [p.id, p]));
-        for (const a of allocRows) {
-          const p: any = payMap.get(a.contact_payment_id) ?? {};
-          merged.push({
-            id: a.id,
-            source: "credit_allocation",
-            amount: Number(a.allocated_amount || 0),
-            transaction_date: p.payment_date ?? a.created_at,
-            created_at: a.created_at,
-            description: "سداد من رصيد العميل",
-            ref_no: p.ref_no ?? null,
-            payment_method: p.payment_method ?? "credit",
-            type: p.direction === "out" ? "out" : "in",
           });
         }
       }

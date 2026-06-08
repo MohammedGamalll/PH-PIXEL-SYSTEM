@@ -9,6 +9,7 @@ import { X } from "lucide-react";
 import { useAutoRef } from "@/hooks/use-auto-ref";
 import { useOwnerId } from "@/lib/owner";
 import { friendlyDbError, requireOwnerId } from "@/lib/db-errors";
+import { usePaymentAccounts } from "@/hooks/use-accounts";
 import { requireTreasuryAccountId } from "@/lib/treasury-account";
 import { allocateContactPayment, resettleContactDebt } from "@/lib/debt-allocation.functions";
 
@@ -40,6 +41,7 @@ export function ContactPaymentModal({ open, direction, contactType, titleOverrid
   const scope = contactType ?? (direction === "in" ? "customer" : "supplier");
   const { data: contacts = [] } = useContacts(scope);
   const { data: balances } = useContactBalances();
+  const { data: paymentAccounts = [] } = usePaymentAccounts();
 
   const [contactId, setContactId] = useState("");
   const [amount, setAmount] = useState("");
@@ -50,7 +52,6 @@ export function ContactPaymentModal({ open, direction, contactType, titleOverrid
   useEffect(() => { if (open && autoRef && !refNo) setRefNo(autoRef); }, [open, autoRef]);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
-  const [treasuries, setTreasuries] = useState<any[]>([]);
   const [treasuryId, setTreasuryId] = useState<string>("");
 
   const selectedContact = useMemo(
@@ -66,21 +67,13 @@ export function ContactPaymentModal({ open, direction, contactType, titleOverrid
 
 
   useEffect(() => {
-    if (!open || !user) return;
-    (async () => {
-      const { data } = await (supabase.from("accounts") as any)
-        .select("id, name, account_type, is_default_cash")
-        .eq("is_cash_equivalent", true)
-        .order("is_default_cash", { ascending: false })
-        .order("account_number");
-      const list = data ?? [];
-      setTreasuries(list);
-      if (list.length > 0) {
-        const def = list.find((t: any) => t.is_default_cash) ?? list[0];
-        setTreasuryId(def.id);
-      }
-    })();
-  }, [open, user]);
+    if (!open || paymentAccounts.length === 0) return;
+    setTreasuryId((cur) => {
+      if (cur) return cur;
+      const def = paymentAccounts.find((a) => a.is_default_cash) ?? paymentAccounts[0];
+      return def?.id ?? "";
+    });
+  }, [open, paymentAccounts]);
 
 
   useEffect(() => {
@@ -213,7 +206,7 @@ export function ContactPaymentModal({ open, direction, contactType, titleOverrid
           <Field label="الخزينة / الحساب">
             <select value={treasuryId} onChange={(e) => setTreasuryId(e.target.value)} style={inputStyle}>
               <option value="">-- اختر --</option>
-              {treasuries.map((t: any) => (
+              {paymentAccounts.map((t) => (
                 <option key={t.id} value={t.id}>{t.name}{t.is_default_cash ? " ⭐" : ""}</option>
               ))}
 

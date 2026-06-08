@@ -6,7 +6,8 @@ import { Trash2, Plus } from "lucide-react";
 import { useSearch } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
-import { useTreasuries, useCashierSessions } from "@/hooks/use-invoices";
+import { pickDefaultLinkedTreasuryId, useLinkedTreasuries } from "@/hooks/use-linked-treasuries";
+import { useCashierSessions } from "@/hooks/use-invoices";
 import { useContacts } from "@/hooks/use-contacts";
 import { useContactBalances, computeContactDue } from "@/hooks/use-contact-balances";
 import { Button } from "@/components/ui/button";
@@ -110,7 +111,7 @@ export function StandaloneReturnPage() {
   const qc = useQueryClient();
   const { user } = useAuth();
   const { settings } = useSettings();
-  const { data: treasuries = [] } = useTreasuries();
+  const { data: treasuries = [] } = useLinkedTreasuries();
   const { data: products = [] } = useProductSearch();
   const { data: customers = [] } = useContacts("customer");
   const { data: suppliers = [] } = useContacts("supplier");
@@ -141,7 +142,9 @@ export function StandaloneReturnPage() {
   useEffect(() => { setPartyMode("cash"); setContactId(""); }, [returnType]);
 
   useEffect(() => {
-    if (!treasuryId && treasuries.length > 0) setTreasuryId(treasuries[0].id);
+    if (!treasuryId && treasuries.length > 0) {
+      setTreasuryId(pickDefaultLinkedTreasuryId(treasuries));
+    }
   }, [treasuries, treasuryId]);
 
   // Row total = qty * unitPrice - discount
@@ -472,7 +475,7 @@ export function StandaloneReturnPage() {
           >
             <option value="">— اختر الخزينة —</option>
             {treasuries.map((t: any) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
+              <option key={t.id} value={t.id}>{t.name}{t.is_default_cash ? " ⭐" : ""}</option>
             ))}
           </select>
         </div>

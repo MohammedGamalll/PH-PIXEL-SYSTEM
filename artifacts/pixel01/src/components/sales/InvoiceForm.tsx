@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/products/PageHeader";
@@ -22,6 +23,8 @@ import { useFormDraft } from "@/hooks/use-form-draft";
 import { useContactBalances, computeContactDue } from "@/hooks/use-contact-balances";
 import { useUnsavedChangesPrompt } from "@/hooks/use-unsaved-prompt";
 import { recordContactDocumentPayment, computeOverpayment } from "@/lib/contact-overpayment";
+import { applyCustomerCreditToInvoice, previewCustomerCreditApplication } from "@/lib/apply-contact-credit";
+import { useAuth } from "@/lib/auth";
 
 
 const labelStyle: React.CSSProperties = { color: "#374151", fontSize: 13, fontWeight: 600 };
@@ -92,6 +95,7 @@ export function InvoiceForm({
   initial?: InvoiceFormInitial;
 }) {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   useRecalcProductStock();
   const { t, dir } = useI18n();
   const { data: customers = [] } = useContacts("customer");
@@ -100,6 +104,7 @@ export function InvoiceForm({
   const update = useUpdateInvoice();
   const isEdit = !!editingId;
   const ownerId = useOwnerId();
+  const { user } = useAuth();
   const { data: customerBalances } = useContactBalances();
   // Locked to the single main pharmacy stock (products.stock). No secondary warehouse binding.
   const [warehouseId] = useState<string>(initial?.warehouse_id ?? "");
@@ -149,6 +154,16 @@ export function InvoiceForm({
     [mode, payment.amount, total],
   );
   const overPaidAmount = saleOverpay.overPaid;
+  const customerCreditPreview = useMemo(() => {
+    if (mode !== "sale" || !customerId || !customerBalances) {
+      return { remainingDue: 0, creditApplied: 0, dueAfterCredit: 0, totalCredit: 0 };
+    }
+    const cust = (customers as any[]).find((c) => c.id === customerId);
+    const { totalCredit } = computeContactDue(cust, customerBalances.get(customerId));
+    const cashPaid = saleOverpay.appliedPaid;
+    const preview = previewCustomerCreditApplication(totalCredit, total, cashPaid);
+    return { ...preview, totalCredit };
+  }, [mode, customerId, customerBalances, customers, total, saleOverpay.appliedPaid]);
   const invPrefix = mode === "draft" ? "DRF" : mode === "quotation" ? "QTE" : mode === "sale_return" ? "RET" : "INV";
   const [autoInvNo] = useAutoRef("invoices", "invoice_number", invPrefix, true);
   const [printingInvoice, setPrintingInvoice] = useState<any>(null);
@@ -302,6 +317,24 @@ export function InvoiceForm({
       ? computeOverpayment(paidRaw, total)
       : { appliedPaid: 0, overPaid: 0 };
 
+    const applyCustomerCredit = async (invoiceId: string, invoiceRef?: string | null) => {
+      if (mode !== "sale" || !customerId) return;
+      const result = await applyCustomerCreditToInvoice({
+        ownerId,
+        customerId,
+        invoiceId,
+        invoiceRef: invoiceRef ?? autoInvNo ?? undefined,
+        total,
+        cashPaid: paid,
+        createdBy: user?.id ?? null,
+      });
+      if (result.creditApplied > 0.0001) {
+        qc.invalidateQueries({ queryKey: ["invoices"] });
+        qc.invalidateQueries({ queryKey: ["contact-balances"] });
+        qc.invalidateQueries({ queryKey: ["invoice_payments", invoiceId] });
+      }
+    };
+
     const recordCustomerPayment = async (invoiceId: string, invoiceRef?: string | null) => {
       if (mode !== "sale" || Number(payment.amount || 0) <= 0.0001) return;
       if (!customerId) {
@@ -367,6 +400,7 @@ export function InvoiceForm({
         .eq("id", editingId!)
         .maybeSingle();
       await recordCustomerPayment(editingId!, (editedInv as any)?.invoice_number ?? autoInvNo);
+      await applyCustomerCredit(editingId!, (editedInv as any)?.invoice_number ?? autoInvNo);
       submittedRef.current = true;
       setSubmitted(true);
       navigate({ to: REDIRECT[mode] });
@@ -398,6 +432,7 @@ export function InvoiceForm({
       .eq("id", id)
       .maybeSingle();
     await recordCustomerPayment(id, (createdInv as any)?.invoice_number ?? autoInvNo);
+    await applyCustomerCredit(id, (createdInv as any)?.invoice_number ?? autoInvNo);
     submittedRef.current = true;
     setSubmitted(true);
     if (andPrint) {
@@ -459,8 +494,15 @@ export function InvoiceForm({
               const cust = (customers as any[]).find((c) => c.id === customerId);
               const info = computeContactDue(cust, customerBalances.get(customerId));
               return (
-                <div className="mt-1 text-xs font-bold" style={{ color: info.gross > 0 ? "#b91c1c" : info.gross < 0 ? "#059669" : "#6b7280" }}>
-                  الرصيد المستحق: {formatBalance(info.gross)}
+                <div className="mt-1 space-y-0.5">
+                  <div className="text-xs font-bold" style={{ color: info.gross > 0 ? "#b91c1c" : info.gross < 0 ? "#059669" : "#6b7280" }}>
+                    الرصيد المستحق: {formatBalance(info.gross)}
+                  </div>
+                  {info.totalCredit > 0.009 && (
+                    <div className="text-xs font-bold" style={{ color: "#0e7490" }}>
+                      رصيد لصالحه: {info.totalCredit.toFixed(2)} ج.م
+                    </div>
+                  )}
                 </div>
               );
             })()}
@@ -613,8 +655,17 @@ export function InvoiceForm({
         <>
           <PaymentSection value={payment} onChange={setPayment} total={total} />
           <div className="rounded-md px-4 py-2.5 mt-3 inline-block" style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca" }}>
-            <span className="text-sm font-bold" style={{ color: "#b91c1c" }}>{t("sales.form.due_amount").replace("{amount}", Math.max(0, total - payment.amount).toFixed(2))}</span>
+            <span className="text-sm font-bold" style={{ color: "#b91c1c" }}>
+              {t("sales.form.due_amount").replace("{amount}", customerCreditPreview.dueAfterCredit.toFixed(2))}
+            </span>
           </div>
+          {customerCreditPreview.creditApplied > 0.0001 && (
+            <div className="rounded-md px-4 py-2.5 mt-2 inline-block mr-2" style={{ backgroundColor: "#ecfeff", border: "1px solid #a5f3fc" }}>
+              <span className="text-sm font-bold" style={{ color: "#0e7490" }}>
+                {`سيُسدَّد نقداً: ${saleOverpay.appliedPaid.toFixed(2)} — من الرصيد: ${customerCreditPreview.creditApplied.toFixed(2)}`}
+              </span>
+            </div>
+          )}
           {overPaidAmount > 0.0001 && (
             <div className="rounded-md px-4 py-2.5 mt-2 inline-block" style={{ backgroundColor: "#ecfeff", border: "1px solid #a5f3fc" }}>
               <span className="text-sm font-bold" style={{ color: "#0e7490" }}>

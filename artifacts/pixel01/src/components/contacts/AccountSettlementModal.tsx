@@ -5,6 +5,7 @@ import { useOwnerId } from "@/lib/owner";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { X, Wallet } from "lucide-react";
+import { usePaymentAccounts } from "@/hooks/use-accounts";
 import { friendlyDbError, requireOwnerId } from "@/lib/db-errors";
 import { requireTreasuryAccountId } from "@/lib/treasury-account";
 import { allocateContactPayment, resettleContactDebt } from "@/lib/debt-allocation.functions";
@@ -51,7 +52,7 @@ export function AccountSettlementModal({ open, onClose, contact, scope, due, tot
   const [paidVal, setPaidVal] = useState<string>("");
   const [method, setMethod] = useState("cash");
   const [notes, setNotes] = useState("");
-  const [treasuries, setTreasuries] = useState<any[]>([]);
+  const { data: paymentAccounts = [] } = usePaymentAccounts();
   const [treasuryId, setTreasuryId] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -63,18 +64,13 @@ export function AccountSettlementModal({ open, onClose, contact, scope, due, tot
   const contactName = (`${contact?.first_name || ""} ${contact?.last_name || ""}`.trim()) || contact?.business_name || contact?.contact_id || "";
 
   useEffect(() => {
-    if (!open || !user) return;
-    (async () => {
-      const { data } = await (supabase.from("accounts") as any)
-        .select("id, name, is_default_cash")
-        .eq("is_cash_equivalent", true)
-        .order("is_default_cash", { ascending: false })
-        .order("account_number");
-      const list = data ?? [];
-      setTreasuries(list);
-      if (list.length > 0) setTreasuryId((list.find((t: any) => t.is_default_cash) ?? list[0]).id);
-    })();
-  }, [open, user]);
+    if (!open || paymentAccounts.length === 0) return;
+    setTreasuryId((cur) => {
+      if (cur) return cur;
+      const def = paymentAccounts.find((a) => a.is_default_cash) ?? paymentAccounts[0];
+      return def?.id ?? "";
+    });
+  }, [open, paymentAccounts]);
 
   useEffect(() => {
     if (!open) { setDiscountVal("0"); setDiscountType("amount"); setPaidVal(""); setNotes(""); setMethod("cash"); }
@@ -183,7 +179,9 @@ export function AccountSettlementModal({ open, onClose, contact, scope, due, tot
             <Field label="الخزينة / الحساب">
               <select value={treasuryId} onChange={(e) => setTreasuryId(e.target.value)} style={inputStyle}>
                 <option value="">-- اختر --</option>
-                {treasuries.map((t: any) => <option key={t.id} value={t.id}>{t.name}{t.is_default_cash ? " ⭐" : ""}</option>)}
+                {paymentAccounts.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}{t.is_default_cash ? " ⭐" : ""}</option>
+                ))}
               </select>
             </Field>
             <Field label="طريقة الدفع">

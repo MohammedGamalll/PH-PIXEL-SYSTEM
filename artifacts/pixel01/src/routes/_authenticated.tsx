@@ -1,6 +1,7 @@
 import { createFileRoute, Outlet, useNavigate, Link, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { useAccess, isPathAllowed } from "@/lib/access";
 import { useI18n } from "@/lib/i18n";
@@ -47,11 +48,12 @@ function AuthenticatedLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { isAdmin, permissions, rawPermissions, isLoading: accessLoading } = useAccess();
   const ownerId = useOwnerId();
+  const qc = useQueryClient();
 
   useEffect(() => {
     if (!ownerId) return;
-    void ensureTreasuryLinks(ownerId);
-  }, [ownerId]);
+    void ensureTreasuryLinks(ownerId, qc);
+  }, [ownerId, qc]);
 
   useEffect(() => {
     if (!loading && !user) navigate({ to: "/login" });

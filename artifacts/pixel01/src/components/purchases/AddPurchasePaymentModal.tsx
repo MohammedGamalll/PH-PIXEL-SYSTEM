@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useTreasuries } from "@/hooks/use-invoices";
+import { pickDefaultLinkedTreasuryId, useLinkedTreasuries } from "@/hooks/use-linked-treasuries";
 import { useAddPurchasePayment } from "@/hooks/use-purchases";
 import { useI18n } from "@/lib/i18n";
 import { DateInput } from "@/components/shared/DateInput";
@@ -18,7 +18,7 @@ type Props = {
 
 export function AddPurchasePaymentModal({ open, onOpenChange, purchase, supplierName }: Props) {
   const { dir } = useI18n();
-  const { data: treasuries = [] } = useTreasuries();
+  const { data: treasuries = [] } = useLinkedTreasuries();
   const add = useAddPurchasePayment();
 
   const total = Number(purchase?.total || 0);
@@ -30,6 +30,11 @@ export function AddPurchasePaymentModal({ open, onOpenChange, purchase, supplier
   const [method, setMethod] = useState<string>("cash");
   const [note, setNote] = useState<string>("");
   const [date, setDate] = useState<string>(new Date().toISOString().slice(0, 10));
+
+  useEffect(() => {
+    if (!open || treasuries.length === 0) return;
+    setTreasuryId((cur) => cur || pickDefaultLinkedTreasuryId(treasuries));
+  }, [open, treasuries]);
 
   if (!purchase) return null;
 
@@ -103,7 +108,9 @@ export function AddPurchasePaymentModal({ open, onOpenChange, purchase, supplier
                 <SelectTrigger><SelectValue placeholder="اختر الخزينة" /></SelectTrigger>
                 <SelectContent>
                   {(treasuries as any[]).map((tr: any) => (
-                    <SelectItem key={tr.id} value={tr.id}>{tr.name}</SelectItem>
+                    <SelectItem key={tr.id} value={tr.id}>
+                      {tr.name}{tr.is_default_cash ? " ⭐" : ""}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>

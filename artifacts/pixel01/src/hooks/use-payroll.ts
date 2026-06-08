@@ -217,65 +217,7 @@ export function useDeletePayroll() {
   });
 }
 
-/**
- * Returns cash/bank accounts (chart of accounts) with their REAL computed
- * balance, so the payroll "صرف الراتب" dropdown shows the same numbers as
- * the accounts page (opening balance + ledger debit/credit). The list also
- * exposes the auto-synced treasury row id so existing payment logic keeps
- * working without changes to the database schema.
- */
-export function useTreasuries() {
-  const { user } = useAuth();
-  return useQuery({
-    queryKey: ["treasuries_from_accounts"],
-    enabled: !!user,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("accounts" as any)
-        .select("id,name,opening_balance,account_type,is_cash_equivalent,is_closed,account_balances(total_debit,total_credit)")
-        .eq("is_cash_equivalent", true)
-        .eq("is_closed", false)
-        .order("name");
-      if (error) throw error;
-      const accounts = (data ?? []) as any[];
-
-      // Fetch linked treasury rows in one go (auto-synced via DB trigger).
-      const accountIds = accounts.map((a) => a.id);
-      let treasuryByAccount: Record<string, { id: string; currency: string }> = {};
-      if (accountIds.length > 0) {
-        const { data: tdata } = await supabase
-          .from("treasuries" as any)
-          .select("id,account_id,currency")
-          .in("account_id", accountIds);
-        for (const t of (tdata ?? []) as any[]) {
-          if (t.account_id) treasuryByAccount[t.account_id] = { id: t.id, currency: t.currency || "EGP" };
-        }
-      }
-
-      return accounts
-        .map((a) => {
-          const agg = Array.isArray(a.account_balances) ? a.account_balances[0] : a.account_balances;
-          const d = Number(agg?.total_debit) || 0;
-          const c = Number(agg?.total_credit) || 0;
-          const opening = Number(a.opening_balance) || 0;
-          // Assets/Expenses are debit-nature; treat cash accounts as debit-nature.
-          const balance = opening + d - c;
-          const linked = treasuryByAccount[a.id];
-          return {
-            id: linked?.id ?? "",
-            account_id: a.id as string,
-            name: a.name as string,
-            balance,
-            currency: linked?.currency ?? "EGP",
-          };
-        })
-        .filter((row) => row.id); // hide accounts that have no linked treasury yet
-    },
-  });
-}
-
-
-
+export { useTreasuries } from "@/hooks/use-linked-treasuries";
 
 export function useUpdateEmployeeSalary() {
   const qc = useQueryClient();

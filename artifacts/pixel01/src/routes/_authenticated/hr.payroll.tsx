@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,9 +13,10 @@ import { toast } from "sonner";
 import {
   useEmployeesForPayroll, usePayrollMonth, useMonthAttendanceAggregates,
   useGeneratePayroll, useUpdatePayrollDraft, useDeletePayroll,
-  useTreasuries, usePayPayroll,
+  usePayPayroll,
   type PayrollRecord,
 } from "@/hooks/use-payroll";
+import { pickDefaultLinkedTreasuryId, useLinkedTreasuries } from "@/hooks/use-linked-treasuries";
 import { PayslipPrintDialog } from "@/components/hr/PayslipPrintDialog";
 
 export const Route = createFileRoute("/_authenticated/hr/payroll")({
@@ -50,7 +51,7 @@ function PayrollPage() {
   const { data: employees = [] } = useEmployeesForPayroll();
   const { data: records = [] } = usePayrollMonth(monthYear);
   const { data: aggregates = {} } = useMonthAttendanceAggregates(monthYear);
-  const { data: treasuries = [] } = useTreasuries();
+  const { data: treasuries = [] } = useLinkedTreasuries();
   const gen = useGeneratePayroll();
   const upd = useUpdatePayrollDraft();
   const del = useDeletePayroll();
@@ -59,6 +60,11 @@ function PayrollPage() {
   const [payOpen, setPayOpen] = useState<PayrollRecord | null>(null);
   const [treasuryId, setTreasuryId] = useState<string>("");
   const [printRecord, setPrintRecord] = useState<PayrollRecord | null>(null);
+
+  useEffect(() => {
+    if (!payOpen || treasuries.length === 0) return;
+    setTreasuryId((cur) => cur || pickDefaultLinkedTreasuryId(treasuries));
+  }, [payOpen, treasuries]);
 
   const empMap = useMemo(() => Object.fromEntries(employees.map((e) => [e.id, e])), [employees]);
   const recsByEmp = useMemo(() => Object.fromEntries(records.map((r) => [r.employee_id, r])), [records]);

@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Trash2, ArrowLeftRight, Search } from "lucide-react";
 import { DataCard } from "@/components/products/DataCard";
 import { useContacts } from "@/hooks/use-contacts";
-import { useTreasuries } from "@/hooks/use-invoices";
+import { pickDefaultLinkedTreasuryId, useLinkedTreasuries } from "@/hooks/use-linked-treasuries";
 import { useOwnerId } from "@/lib/owner";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -65,7 +65,7 @@ function ItemExchangePage() {
       return (data ?? []) as any[];
     },
   });
-  const { data: treasuries = [] } = useTreasuries();
+  const { data: treasuries = [] } = useLinkedTreasuries();
   const [contactId, setContactId] = useState("");
   const [treasuryId, setTreasuryId] = useState("");
   const [exchangeDate, setExchangeDate] = useState(new Date().toISOString().slice(0, 10));
@@ -77,6 +77,12 @@ function ItemExchangePage() {
   const byId = useMemo(() => new Map((products as any[]).map((p) => [p.id, p])), [products]);
   const selectedContact = (contacts as any[]).find((c) => c.id === contactId);
   const selectedTreasury = (treasuries as any[]).find((t) => t.id === treasuryId);
+
+  useEffect(() => {
+    if (!treasuryId && treasuries.length > 0) {
+      setTreasuryId(pickDefaultLinkedTreasuryId(treasuries));
+    }
+  }, [treasuries, treasuryId]);
 
   const incomingTotal = incomingRows.reduce((s, r) => s + rowTotal(r), 0);
   const outgoingTotal = outgoingRows.reduce((s, r) => s + rowTotal(r), 0);
@@ -286,7 +292,9 @@ function ItemExchangePage() {
             الخزنة
             <select className="mt-1 w-full border rounded h-10 px-2" value={treasuryId} onChange={(e) => setTreasuryId(e.target.value)}>
               <option value="">اختر...</option>
-              {(treasuries as any[]).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              {(treasuries as any[]).map((t) => (
+                <option key={t.id} value={t.id}>{t.name}{t.is_default_cash ? " ⭐" : ""}</option>
+              ))}
             </select>
           </label>
           <label className="text-sm">

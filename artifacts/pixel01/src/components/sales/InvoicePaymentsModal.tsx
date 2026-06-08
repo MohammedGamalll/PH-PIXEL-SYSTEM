@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useTreasuries, useInvoicePayments, useAddInvoicePayment } from "@/hooks/use-invoices";
+import { useInvoicePayments, useAddInvoicePayment } from "@/hooks/use-invoices";
+import { pickDefaultLinkedTreasuryId, useLinkedTreasuries } from "@/hooks/use-linked-treasuries";
 import { useI18n } from "@/lib/i18n";
 import { DateInput } from "@/components/shared/DateInput";
 
@@ -17,7 +18,7 @@ type Props = {
 
 export function InvoicePaymentsModal({ open, onOpenChange, invoice }: Props) {
   const { t, dir } = useI18n();
-  const { data: treasuries = [] } = useTreasuries();
+  const { data: treasuries = [] } = useLinkedTreasuries();
   const { data: payments = [] } = useInvoicePayments(invoice?.id);
   const add = useAddInvoicePayment();
 
@@ -26,6 +27,11 @@ export function InvoicePaymentsModal({ open, onOpenChange, invoice }: Props) {
   const [method, setMethod] = useState<string>("cash");
   const [note, setNote] = useState<string>("");
   const [date, setDate] = useState<string>(new Date().toISOString().slice(0, 10));
+
+  useEffect(() => {
+    if (!open || treasuries.length === 0) return;
+    setTreasuryId((cur) => cur || pickDefaultLinkedTreasuryId(treasuries));
+  }, [open, treasuries]);
 
   const due = invoice ? Math.max(0, Number(invoice.total || 0) - Number(invoice.paid_amount || 0)) : 0;
   const amountNum = Number(amount) || 0;
@@ -131,7 +137,11 @@ export function InvoicePaymentsModal({ open, onOpenChange, invoice }: Props) {
               <Select value={treasuryId} onValueChange={setTreasuryId}>
                 <SelectTrigger><SelectValue placeholder={t("sales.payments.select")} /></SelectTrigger>
                 <SelectContent>
-                  {(treasuries as any[]).map((tr: any) => <SelectItem key={tr.id} value={tr.id}>{tr.name}</SelectItem>)}
+                  {(treasuries as any[]).map((tr: any) => (
+                    <SelectItem key={tr.id} value={tr.id}>
+                      {tr.name}{tr.is_default_cash ? " ⭐" : ""}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
