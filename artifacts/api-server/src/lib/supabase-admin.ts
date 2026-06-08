@@ -1,22 +1,19 @@
 import { createClient } from "@supabase/supabase-js";
+import { readSupabaseServerEnv, validateSupabaseServerEnv } from "./supabase-env.js";
 
 function createAdminClient() {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !key) {
-    const missing = [
-      !url && "SUPABASE_URL (or VITE_SUPABASE_URL)",
-      !key && "SUPABASE_SERVICE_ROLE_KEY",
-    ].filter(Boolean).join(", ");
+  const issues = validateSupabaseServerEnv();
+  if (issues.length) {
     throw new Error(
-      `Missing server env: ${missing}. ` +
-      "Local: copy .env.example → .env, add SUPABASE_SERVICE_ROLE_KEY from Supabase Dashboard → Settings → API, then run `pnpm dev:all`. " +
-      "Vercel: Project Settings → Environment Variables → add SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, and SUPABASE_SERVICE_ROLE_KEY (not VITE_*), then redeploy."
+      `Missing or invalid server env: ${issues.join("; ")}. ` +
+      "Local: copy .env.example → .env with keys from ONE Supabase project, then run `pnpm dev:all`. " +
+      "Vercel: Settings → Environment Variables → set SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, SUPABASE_SERVICE_ROLE_KEY " +
+      "(and VITE_SUPABASE_URL + VITE_SUPABASE_PUBLISHABLE_KEY for the build — all from the same project), then redeploy.",
     );
   }
 
-  return createClient(url, key, {
+  const { url, serviceKey } = readSupabaseServerEnv();
+  return createClient(url!, serviceKey!, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
@@ -30,8 +27,7 @@ export function getSupabaseAdmin() {
 
 /** Verify a bearer JWT and return the user id, or throw if invalid. */
 export async function verifyJwt(token: string): Promise<string> {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  const { url, anonKey } = readSupabaseServerEnv();
   if (!url || !anonKey) throw new Error("Supabase URL/anon key not configured");
 
   const { createClient: cc } = await import("@supabase/supabase-js");
@@ -43,3 +39,5 @@ export async function verifyJwt(token: string): Promise<string> {
   if (error || !data.user) throw new Error("Invalid or expired token");
   return data.user.id;
 }
+
+export { readSupabaseServerEnv, validateSupabaseServerEnv } from "./supabase-env.js";
