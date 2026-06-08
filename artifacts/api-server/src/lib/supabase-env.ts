@@ -46,3 +46,31 @@ export function validateSupabaseServerEnv(): string[] {
   }
   return issues;
 }
+
+/** Frontend + JWT verify — does not require service_role. */
+export function validateSupabasePublicEnv(): string[] {
+  const { url, anonKey, urlRef, anonRef } = readSupabaseServerEnv();
+  const issues: string[] = [];
+  if (!url) issues.push("SUPABASE_URL (or VITE_SUPABASE_URL) is missing");
+  if (!anonKey) issues.push("SUPABASE_PUBLISHABLE_KEY (or VITE_SUPABASE_PUBLISHABLE_KEY) is missing");
+  if (urlRef && anonRef && urlRef !== anonRef) {
+    issues.push(
+      `SUPABASE_URL project (${urlRef}) does not match anon/publishable key project (${anonRef})`,
+    );
+  }
+  return issues;
+}
+
+export function validateSupabaseAdminEnv(): string[] {
+  const publicIssues = validateSupabasePublicEnv();
+  if (publicIssues.length) return publicIssues;
+  const { serviceKey, urlRef, serviceRef } = readSupabaseServerEnv();
+  const issues: string[] = [];
+  if (!serviceKey) issues.push("SUPABASE_SERVICE_ROLE_KEY is missing (needed for /api/employees/* only)");
+  if (urlRef && serviceRef && urlRef !== serviceRef) {
+    issues.push(
+      `SUPABASE_URL project (${urlRef}) does not match service_role key project (${serviceRef})`,
+    );
+  }
+  return issues;
+}

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { HealthCheckResponse } from "@workspace/api-zod";
-import { readSupabaseServerEnv, validateSupabaseServerEnv } from "../lib/supabase-env.js";
+import { readSupabaseServerEnv, validateSupabasePublicEnv, validateSupabaseAdminEnv } from "../lib/supabase-env.js";
 
 const router: IRouter = Router();
 
@@ -12,12 +12,15 @@ router.get("/healthz", (_req, res) => {
 /** Safe env diagnostic for Vercel — no secrets, only project refs and missing vars. */
 router.get("/healthz/env", (_req, res) => {
   const { urlRef, serviceRef, anonRef } = readSupabaseServerEnv();
-  const issues = validateSupabaseServerEnv();
+  const publicIssues = validateSupabasePublicEnv();
+  const adminIssues = validateSupabaseAdminEnv();
   res.json({
-    ok: issues.length === 0,
+    ok: publicIssues.length === 0,
+    apiReady: adminIssues.length === 0,
     runtime: process.env.VERCEL ? "vercel" : "node",
     projects: { url: urlRef, serviceRole: serviceRef, publishable: anonRef },
-    issues,
+    issues: publicIssues,
+    apiIssues: adminIssues.filter((i) => !publicIssues.includes(i)),
   });
 });
 

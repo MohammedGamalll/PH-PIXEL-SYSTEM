@@ -1,14 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
-import { readSupabaseServerEnv, validateSupabaseServerEnv } from "./supabase-env.js";
+import { readSupabaseServerEnv, validateSupabasePublicEnv, validateSupabaseAdminEnv } from "./supabase-env.js";
 
 function createAdminClient() {
-  const issues = validateSupabaseServerEnv();
+  const issues = validateSupabaseAdminEnv();
   if (issues.length) {
     throw new Error(
       `Missing or invalid server env: ${issues.join("; ")}. ` +
-      "Local: copy .env.example → .env with keys from ONE Supabase project, then run `pnpm dev:all`. " +
-      "Vercel: Settings → Environment Variables → set SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, SUPABASE_SERVICE_ROLE_KEY " +
-      "(and VITE_SUPABASE_URL + VITE_SUPABASE_PUBLISHABLE_KEY for the build — all from the same project), then redeploy.",
+      "Add SUPABASE_SERVICE_ROLE_KEY from the same Supabase project for employee admin routes.",
     );
   }
 
@@ -40,4 +38,4 @@ export async function verifyJwt(token: string): Promise<string> {
   return data.user.id;
 }
 
-export { readSupabaseServerEnv, validateSupabaseServerEnv } from "./supabase-env.js";
+export { readSupabaseServerEnv, validateSupabaseServerEnv, validateSupabasePublicEnv, validateSupabaseAdminEnv } from "./supabase-env.js";
