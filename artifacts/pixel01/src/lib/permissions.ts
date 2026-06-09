@@ -139,3 +139,38 @@ export function availableActions(module: ModuleDef): ActionKey[] {
   const dis = new Set(module.disabledActions ?? []);
   return STANDARD_ACTIONS.filter((a) => !dis.has(a));
 }
+
+export function defaultEmployeePermissions(): EmployeePermissionsV2 {
+  return {
+    pos: { view: true, create: true, edit: false, delete: false, print: false },
+    sales_invoices: { view: true, create: false, edit: false, delete: false, print: false },
+    customers: { view: true, create: false, edit: false, delete: false, print: false },
+    products: { view: true, create: false, edit: false, delete: false, print: false },
+  };
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+/**
+ * Merge permissions while preserving unknown/legacy keys.
+ * - top-level keys are preserved
+ * - nested module object keys are preserved
+ */
+export function mergeEmployeePermissions(
+  existing: EmployeePermissionsV2 | Record<string, unknown> | null | undefined,
+  incoming: EmployeePermissionsV2 | Record<string, unknown> | null | undefined,
+): EmployeePermissionsV2 {
+  const base = isPlainObject(existing) ? existing : {};
+  const next = isPlainObject(incoming) ? incoming : {};
+  const out: Record<string, unknown> = { ...base };
+  for (const [k, v] of Object.entries(next)) {
+    if (isPlainObject(v) && isPlainObject(out[k])) {
+      out[k] = { ...(out[k] as Record<string, unknown>), ...v };
+    } else {
+      out[k] = v;
+    }
+  }
+  return out as EmployeePermissionsV2;
+}

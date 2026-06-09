@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { useEmployees, useUpdateEmployeePermissions } from "@/hooks/use-employees";
-import { useUpdateEmployeeSalary } from "@/hooks/use-payroll";
 import type { EmployeePermissions, CashierPermissions } from "@/hooks/use-current-employee";
 import { createEmployeeAccount, updateEmployeeAccount, deleteEmployeeAccount } from "@/lib/employees.functions";
 import { PageHeader } from "@/components/products/PageHeader";
@@ -17,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { useI18n } from "@/lib/i18n";
+import { EmployeeCreateWizard } from "@/components/users/EmployeeCreateWizard";
 
 export const Route = createFileRoute("/_authenticated/users/employees")({
   component: EmployeesPage,
@@ -29,6 +29,7 @@ function EmployeesPage() {
   const { data: employeesData, isLoading } = useEmployees();
   const employees = employeesData?.rows ?? [];
   const count = employeesData?.count ?? 0;
+  const branchName = employeesData?.branchName ?? "الفرع الحالي";
   const limitReached = count >= 10;
   const updatePerms = useUpdateEmployeePermissions();
   const createFn = createEmployeeAccount;
@@ -42,12 +43,7 @@ function EmployeesPage() {
 
   const adminPrefix = (user?.email ?? "user").split("@")[0];
   const defaultEmail = `${adminPrefix}_emp@gmail.com`;
-  const [name, setName] = useState(t("users.emp.default_name"));
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState(defaultEmail);
-  const [password, setPassword] = useState("Emp@2026");
+  const [email] = useState(defaultEmail);
 
   const th: React.CSSProperties = {
     backgroundColor: "#f9fafb", color: "#374151", padding: "10px 12px",
@@ -57,14 +53,22 @@ function EmployeesPage() {
     borderBottom: "1px solid #f3f4f6", padding: "10px 12px", color: "#374151", textAlign: dir === "rtl" ? "right" : "left",
   };
 
-  const handleCreate = async () => {
+  const handleCreate = async (payload: {
+    name: string;
+    email: string;
+    password: string;
+    first_name?: string;
+    last_name?: string;
+    phone?: string;
+    permissions: Record<string, any>;
+  }) => {
     if (limitReached) {
       toast.error(t("users.emp.limit_reached"));
       return;
     }
     setCreating(true);
     try {
-      await createFn({ data: { name, email, password, first_name: firstName || undefined, last_name: lastName || undefined, phone: phone || undefined } });
+      await createFn({ data: payload });
       toast.success(t("users.emp.created"));
       qc.invalidateQueries({ queryKey: ["employees"] });
     } catch (e: any) {
@@ -81,6 +85,9 @@ function EmployeesPage() {
 
   return (
     <div className="space-y-3" dir={dir}>
+      <div className="rounded border border-border bg-muted/20 px-3 py-2 text-sm">
+        الفرع الحالي: <span className="font-semibold">{branchName}</span>
+      </div>
       <div className="flex items-center gap-3">
         <PageHeader title={t("users.page.employees_title")} />
         <span
@@ -95,50 +102,11 @@ function EmployeesPage() {
       </div>
 
       {!isLoading && !limitReached && (
+        <EmployeeCreateWizard creating={creating} defaultEmail={email} onSubmit={handleCreate} />
+      )}
+      {!isLoading && limitReached && (
         <DataCard>
-          <div className="space-y-3 text-start">
-            <h3 className="text-base font-semibold" style={{ color: "#111827" }}>{t("users.emp.create_title")}</h3>
-            <p className="text-sm" style={{ color: "#6b7280" }}>
-              {t("users.emp.remaining", { n: 10 - count })}
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div>
-                <Label>{t("users.emp.name")}</Label>
-                <Input value={name} onChange={(e) => setName(e.target.value)} />
-              </div>
-              <div>
-                <Label>الاسم الأول</Label>
-                <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
-              </div>
-              <div>
-                <Label>اسم العائلة</Label>
-                <Input value={lastName} onChange={(e) => setLastName(e.target.value)} />
-              </div>
-              <div>
-                <Label>رقم الهاتف</Label>
-                <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
-              </div>
-              <div>
-                <Label>{t("users.emp.email")}</Label>
-                <Input value={email} onChange={(e) => setEmail(e.target.value)} />
-              </div>
-              <div>
-                <Label>{t("users.emp.password")}</Label>
-                <Input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
-              </div>
-            </div>
-            <Button
-              onClick={handleCreate}
-              disabled={creating || limitReached}
-              style={{
-                cursor: limitReached ? "not-allowed" : undefined,
-                opacity: limitReached ? 0.5 : undefined,
-              }}
-              title={limitReached ? t("users.emp.limit_title") : undefined}
-            >
-              {creating ? t("users.emp.creating") : t("users.emp.create_btn")}
-            </Button>
-          </div>
+          <p className="text-sm text-red-600">{t("users.emp.limit_reached")}</p>
         </DataCard>
       )}
 
@@ -151,6 +119,8 @@ function EmployeesPage() {
                 <th style={th}>{t("users.emp.email")}</th>
                 <th style={th}>رقم الهاتف</th>
                 <th style={th}>{t("users.table.status")}</th>
+                <th style={th}>عدد العمليات</th>
+                <th style={th}>آخر نشاط</th>
                 <th style={th}>{t("users.emp.col_opt")}</th>
               </tr>
             </thead>
@@ -161,8 +131,17 @@ function EmployeesPage() {
                   <td style={td}>{e.email}</td>
                   <td style={td}>{e.phone || "—"}</td>
                   <td style={td}>{e.status}</td>
+                  <td style={td}>{Number(e.operations_count ?? 0)}</td>
+                  <td style={td}>
+                    {e.last_activity_at ? new Date(e.last_activity_at).toLocaleString(dir === "rtl" ? "ar-EG" : "en-US") : "—"}
+                  </td>
                   <td style={td}>
                     <div className="flex gap-2 flex-wrap">
+                      <Link to="/reports/activity-log" search={{ employee: e.id }}>
+                        <Button size="sm" variant="outline">
+                          متابعة العمليات
+                        </Button>
+                      </Link>
                       <Link to="/employees/$id/permissions" params={{ id: e.id }}>
                         <Button size="sm" variant="outline">
                           تعديل الصلاحيات
@@ -195,7 +174,7 @@ function EmployeesPage() {
               ))}
               {employees.length === 0 && (
                 <tr>
-                  <td style={td} colSpan={5} className="text-center" >
+                  <td style={td} colSpan={7} className="text-center" >
                     {t("users.emp.none_yet")}
                   </td>
                 </tr>
@@ -211,7 +190,7 @@ function EmployeesPage() {
         onSubmit={(permissions) => {
           if (!editing) return;
           updatePerms.mutate(
-            { id: editing.id, permissions },
+            { id: editing.id, permissions, existingPermissions: editing.permissions ?? {} },
             { onSuccess: () => setEditing(null) }
           );
         }}
@@ -244,11 +223,11 @@ function EditEmployeeDialog({
   onSubmit: (data: {
     id: string; name: string; email: string;
     first_name?: string | null; last_name?: string | null; phone?: string | null;
+    basic_salary?: number | null; working_hours?: number | null;
     password?: string;
   }) => void | Promise<void>;
 }) {
   const { dir } = useI18n();
-  const updateSalary = useUpdateEmployeeSalary();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -332,9 +311,10 @@ function EditEmployeeDialog({
                   first_name: firstName || null,
                   last_name: lastName || null,
                   phone: phone || null,
+                  basic_salary: basicSalary,
+                  working_hours: workingHours,
                   password: password || undefined,
                 });
-                await updateSalary.mutateAsync({ id: employee.id, basic_salary: basicSalary, working_hours: workingHours });
               } finally {
                 setSaving(false);
               }

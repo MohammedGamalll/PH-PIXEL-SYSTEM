@@ -45,6 +45,24 @@ async function callAdminApi(path: string, body: Record<string, any>): Promise<an
   return json;
 }
 
+async function callAdminApiGet(path: string): Promise<any> {
+  const token = await getAuthToken();
+  const res = await fetch(`/api${path}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  const contentType = res.headers.get("content-type") || "";
+  const raw = await res.text();
+  if (!contentType.includes("application/json")) {
+    throw new Error(raw.trim() || `فشل الطلب (${res.status})`);
+  }
+  const json = raw ? JSON.parse(raw) : {};
+  if (!res.ok) throw new Error(json.error || `فشل الطلب (${res.status})`);
+  return json;
+}
+
 export const createEmployeeAccount = async ({ data }: {
   data: {
     name: string;
@@ -53,6 +71,7 @@ export const createEmployeeAccount = async ({ data }: {
     first_name?: string;
     last_name?: string;
     phone?: string;
+    permissions?: Record<string, any>;
   }
 }) => {
   return callAdminApi("/employees/create", data);
@@ -67,6 +86,8 @@ export const updateEmployeeAccount = async ({ data }: {
     last_name?: string | null;
     phone?: string | null;
     password?: string;
+    basic_salary?: number | null;
+    working_hours?: number | null;
   }
 }) => {
   return callAdminApi("/employees/update", data);
@@ -74,6 +95,19 @@ export const updateEmployeeAccount = async ({ data }: {
 
 export const deleteEmployeeAccount = async ({ data }: { data: { id: string } }) => {
   return callAdminApi("/employees/delete", data);
+};
+
+export const updateEmployeePermissions = async ({ data }: {
+  data: {
+    id: string;
+    permissions: Record<string, any>;
+  }
+}) => {
+  return callAdminApi("/employees/permissions/update", data);
+};
+
+export const listEmployeesSummary = async () => {
+  return callAdminApiGet("/employees/list");
 };
 
 export const restoreEmployeeAccount = async ({ data }: { data: { softDeleteId: string } }) => {

@@ -15,6 +15,7 @@ const ADMIN_ONLY_PREFIXES = [
   "/deleted-records",
   "/system",
   "/employees",
+  "/employees/",
 ];
 
 // Always allowed for any authenticated user.

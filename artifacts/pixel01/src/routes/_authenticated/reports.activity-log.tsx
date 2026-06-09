@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/products/PageHeader";
@@ -12,6 +12,9 @@ import { useInvoicePrint } from "@/hooks/use-invoice-print";
 import { PurchaseDetailsModal } from "@/components/purchases/PurchaseDetailsModal";
 
 export const Route = createFileRoute("/_authenticated/reports/activity-log")({
+  validateSearch: (raw: Record<string, unknown>) => ({
+    employee: typeof raw.employee === "string" ? raw.employee : "",
+  }),
   component: ActivityLogPage,
 });
 
@@ -93,6 +96,7 @@ function formatDetails(actionType: string, details: any, isAr: boolean): string 
 }
 
 function ActivityLogPage() {
+  const search = Route.useSearch();
   const { user } = useAuth();
   const { t, dir, lang } = useI18n();
   const isAr = lang === "ar";
@@ -100,8 +104,12 @@ function ActivityLogPage() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [actionFilter, setActionFilter] = useState("");
-  const [employeeFilter, setEmployeeFilter] = useState("");
+  const [employeeFilter, setEmployeeFilter] = useState(search.employee || "");
   const [excludeAuth, setExcludeAuth] = useState(true);
+  useEffect(() => {
+    if (search.employee) setEmployeeFilter(search.employee);
+  }, [search.employee]);
+
   const [viewInvoice, setViewInvoice] = useState<any | null>(null);
   const [viewPurchase, setViewPurchase] = useState<any | null>(null);
   const { onModalPrint, printNode } = useInvoicePrint({

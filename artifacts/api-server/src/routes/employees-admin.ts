@@ -3,6 +3,54 @@ import { getSupabaseAdmin, verifyJwt } from "../lib/supabase-admin.js";
 
 const router: IRouter = Router();
 
+function defaultEmployeePermissions() {
+  return {
+    pos: { view: true, create: true, edit: false, delete: false, print: false },
+    sales_invoices: { view: true, create: false, edit: false, delete: false, print: false },
+    customers: { view: true, create: false, edit: false, delete: false, print: false },
+    products: { view: true, create: false, edit: false, delete: false, print: false },
+  };
+}
+
+function isObj(v: unknown): v is Record<string, any> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+function mergePermissions(existing: any, incoming: any) {
+  const base = isObj(existing) ? existing : {};
+  const next = isObj(incoming) ? incoming : {};
+  const out: Record<string, any> = { ...base };
+  for (const [k, v] of Object.entries(next)) {
+    if (isObj(v) && isObj(out[k])) out[k] = { ...(out[k] as Record<string, any>), ...v };
+    else out[k] = v;
+  }
+  return out;
+}
+
+async function insertActivityLog(admin: any, payload: {
+  owner_id: string;
+  admin_id: string;
+  employee_id?: string | null;
+  actor_name: string;
+  action_type: string;
+  subject_type?: string | null;
+  subject_id?: string | null;
+  subject_label?: string | null;
+  details?: any;
+}) {
+  await (admin.from("employee_activity_log") as any).insert({
+    owner_id: payload.owner_id,
+    admin_id: payload.admin_id,
+    employee_id: payload.employee_id ?? null,
+    actor_name: payload.actor_name,
+    action_type: payload.action_type,
+    subject_type: payload.subject_type ?? null,
+    subject_id: payload.subject_id ?? null,
+    subject_label: payload.subject_label ?? null,
+    details: payload.details ?? null,
+  });
+}
+
 /** Extract bearer token from Authorization header */
 function extractToken(req: Request): string | null {
   const auth = req.headers.authorization;
@@ -38,7 +86,7 @@ async function requireAdmin(req: Request, res: Response, next: Function) {
 
 /** POST /api/employees/create */
 router.post("/employees/create", requireAdmin, async (req: Request, res: Response) => {
-  const { name, email, password, first_name, last_name, phone } = req.body;
+  const { name, email, password, first_name, last_name, phone, permissions } = req.body;
   const adminId: string = (req as any).adminId;
   const admin = getSupabaseAdmin();
 
@@ -75,11 +123,24 @@ router.post("/employees/create", requireAdmin, async (req: Request, res: Respons
       first_name: first_name ?? null,
       last_name: last_name ?? null,
       phone: phone ?? null,
+      permissions: mergePermissions(defaultEmployeePermissions(), permissions ?? {}),
     });
     if (insErr) {
       await admin.auth.admin.deleteUser(empId).catch(() => {});
       throw new Error(insErr.message);
     }
+
+    await insertActivityLog(admin, {
+      owner_id: adminId,
+      admin_id: adminId,
+      employee_id: empId,
+      actor_name: "الأدمن",
+      action_type: "employee_created",
+      subject_type: "employee",
+      subject_id: empId,
+      subject_label: String(name || email),
+      details: { email, phone: phone ?? null },
+    });
 
     res.json({ id: empId, email });
   } catch (err: any) {
@@ -89,14 +150,14 @@ router.post("/employees/create", requireAdmin, async (req: Request, res: Respons
 
 /** POST /api/employees/update */
 router.post("/employees/update", requireAdmin, async (req: Request, res: Response) => {
-  const { id, name, email, first_name, last_name, phone, password } = req.body;
+  const { id, name, email, first_name, last_name, phone, password, basic_salary, working_hours } = req.body;
   const adminId: string = (req as any).adminId;
   const admin = getSupabaseAdmin();
 
   try {
     // Verify ownership
     const { data: emp } = await (admin.from("employees") as any)
-      .select("id, admin_id").eq("id", id).maybeSingle();
+      .select("id, admin_id, name, email").eq("id", id).maybeSingle();
     if (!emp || (emp as any).admin_id !== adminId) throw new Error("لا تملك صلاحية على هذا الموظف");
 
     const authUpdate: any = { email, user_metadata: { full_name: name } };
@@ -106,9 +167,33 @@ router.post("/employees/update", requireAdmin, async (req: Request, res: Respons
     if (authErr) throw new Error(authErr.message);
 
     const { error: updErr } = await (admin.from("employees") as any)
-      .update({ name, email, first_name: first_name ?? null, last_name: last_name ?? null, phone: phone ?? null })
+      .update({
+        name,
+        email,
+        first_name: first_name ?? null,
+        last_name: last_name ?? null,
+        phone: phone ?? null,
+        basic_salary: basic_salary ?? undefined,
+        working_hours: working_hours ?? undefined,
+      })
       .eq("id", id);
     if (updErr) throw new Error(updErr.message);
+
+    await insertActivityLog(admin, {
+      owner_id: adminId,
+      admin_id: adminId,
+      employee_id: id,
+      actor_name: "الأدمن",
+      action_type: "employee_updated",
+      subject_type: "employee",
+      subject_id: id,
+      subject_label: String(name || email),
+      details: {
+        before: { name: (emp as any).name, email: (emp as any).email },
+        after: { name, email, first_name: first_name ?? null, last_name: last_name ?? null, phone: phone ?? null },
+        password_changed: !!password,
+      },
+    });
 
     res.json({ ok: true });
   } catch (err: any) {
@@ -153,7 +238,106 @@ router.post("/employees/delete", requireAdmin, async (req: Request, res: Respons
     const { error: delAuthErr } = await admin.auth.admin.deleteUser(id);
     if (delAuthErr) console.warn(`[employees/delete] auth user delete failed for ${id}:`, delAuthErr.message);
 
+    await insertActivityLog(admin, {
+      owner_id: adminId,
+      admin_id: adminId,
+      employee_id: id,
+      actor_name: "الأدمن",
+      action_type: "employee_deleted",
+      subject_type: "employee",
+      subject_id: id,
+      subject_label: empName,
+      details: { auth_deleted: !delAuthErr },
+    });
+
     res.json({ ok: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post("/employees/permissions/update", requireAdmin, async (req: Request, res: Response) => {
+  const { id, permissions } = req.body as { id?: string; permissions?: Record<string, any> };
+  const adminId: string = (req as any).adminId;
+  const admin = getSupabaseAdmin();
+
+  try {
+    if (!id || !permissions || !isObj(permissions)) throw new Error("بيانات الصلاحيات غير مكتملة");
+    const { data: emp } = await (admin.from("employees") as any)
+      .select("id, admin_id, name, email, permissions")
+      .eq("id", id)
+      .maybeSingle();
+    if (!emp || (emp as any).admin_id !== adminId) throw new Error("لا تملك صلاحية على هذا الموظف");
+
+    const merged = mergePermissions((emp as any).permissions ?? {}, permissions);
+    const { error } = await (admin.from("employees") as any)
+      .update({ permissions: merged })
+      .eq("id", id)
+      .eq("admin_id", adminId);
+    if (error) throw new Error(error.message);
+
+    await insertActivityLog(admin, {
+      owner_id: adminId,
+      admin_id: adminId,
+      employee_id: id,
+      actor_name: "الأدمن",
+      action_type: "permissions_updated",
+      subject_type: "employee",
+      subject_id: id,
+      subject_label: String((emp as any).name || (emp as any).email || "موظف"),
+      details: { updated_modules: Object.keys(permissions) },
+    });
+
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.get("/employees/list", requireAdmin, async (req: Request, res: Response) => {
+  const adminId: string = (req as any).adminId;
+  const admin = getSupabaseAdmin();
+
+  try {
+    const [{ data: employees, count, error }, { data: logs }, { data: profile }] = await Promise.all([
+      (admin.from("employees") as any)
+        .select("*", { count: "exact" })
+        .eq("admin_id", adminId)
+        .order("created_at", { ascending: false }),
+      (admin.from("employee_activity_log") as any)
+        .select("employee_id, created_at")
+        .eq("admin_id", adminId)
+        .not("employee_id", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(5000),
+      (admin.from("profiles") as any)
+        .select("company_name, full_name")
+        .eq("id", adminId)
+        .maybeSingle(),
+    ]);
+    if (error) throw new Error(error.message);
+
+    const stats = new Map<string, { operations_count: number; last_activity_at: string | null }>();
+    for (const l of (logs ?? []) as any[]) {
+      const empId = String(l.employee_id || "");
+      if (!empId) continue;
+      const prev = stats.get(empId) ?? { operations_count: 0, last_activity_at: null };
+      prev.operations_count += 1;
+      if (!prev.last_activity_at) prev.last_activity_at = l.created_at || null;
+      stats.set(empId, prev);
+    }
+
+    const rows = ((employees ?? []) as any[]).map((e) => ({
+      ...e,
+      operations_count: stats.get(e.id)?.operations_count ?? 0,
+      last_activity_at: stats.get(e.id)?.last_activity_at ?? null,
+    }));
+
+    res.json({
+      rows,
+      count: count ?? rows.length,
+      branchName: (profile as any)?.company_name || (profile as any)?.full_name || "الفرع الحالي",
+    });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }

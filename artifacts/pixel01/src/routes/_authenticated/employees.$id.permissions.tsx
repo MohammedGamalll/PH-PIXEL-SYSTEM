@@ -11,7 +11,7 @@ import { PageHeader } from "@/components/products/PageHeader";
 import { ArrowRight, Save, RotateCcw } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { toast } from "sonner";
-import type { EmployeePermissionsV2 } from "@/lib/permissions";
+import { mergeEmployeePermissions, type EmployeePermissionsV2 } from "@/lib/permissions";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -103,15 +103,10 @@ function EmployeePermissionsPage() {
     "موظف";
 
   const handleSave = () => {
-    // Preserve any legacy/unknown keys present on the server record by merging
-    // the matrix output on top of the original payload.
-    const merged = {
-      ...(employee?.permissions ?? {}),
-      ...perms,
-    } as EmployeePermissionsV2;
+    const merged = mergeEmployeePermissions(employee?.permissions ?? {}, perms);
 
     updatePerms.mutate(
-      { id, permissions: merged as any },
+      { id, permissions: merged as any, existingPermissions: employee?.permissions ?? {} },
       {
         onSuccess: () => {
           baselineRef.current = perms;

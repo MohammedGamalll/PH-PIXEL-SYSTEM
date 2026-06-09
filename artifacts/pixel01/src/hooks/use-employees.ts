@@ -1,8 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
-import type { EmployeePermissions } from "./use-current-employee";
+import { listEmployeesSummary, updateEmployeePermissions } from "@/lib/employees.functions";
+import { mergeEmployeePermissions } from "@/lib/permissions";
 
 export const EMPLOYEE_LIMIT = 10;
 
@@ -12,12 +12,12 @@ export function useEmployees() {
     queryKey: ["employees", user?.id],
     enabled: !!user,
     queryFn: async () => {
-      const { data, error, count } = await supabase
-        .from("employees" as any)
-        .select("*", { count: "exact" })
-        .eq("admin_id", user!.id);
-      if (error) throw error;
-      return { rows: (data ?? []) as any[], count: count ?? 0 };
+      const resp = await listEmployeesSummary();
+      return {
+        rows: (resp.rows ?? []) as any[],
+        count: Number(resp.count ?? 0),
+        branchName: resp.branchName ?? null,
+      };
     },
   });
 }
@@ -25,14 +25,21 @@ export function useEmployees() {
 export function useUpdateEmployeePermissions() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, permissions }: { id: string; permissions: EmployeePermissions }) => {
-      const { error } = await (supabase.from("employees" as any) as any)
-        .update({ permissions })
-        .eq("id", id);
-      if (error) throw error;
+    mutationFn: async ({
+      id,
+      permissions,
+      existingPermissions,
+    }: {
+      id: string;
+      permissions: Record<string, any>;
+      existingPermissions?: Record<string, unknown> | null;
+    }) => {
+      const merged = mergeEmployeePermissions(existingPermissions, permissions as any);
+      await updateEmployeePermissions({ data: { id, permissions: merged } });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["employees"] });
+      qc.invalidateQueries({ queryKey: ["employee"] });
       qc.invalidateQueries({ queryKey: ["current_employee"] });
       toast.success("تم تحديث الصلاحيات");
     },
