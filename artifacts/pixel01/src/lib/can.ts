@@ -2,7 +2,7 @@ import { createElement, cloneElement, isValidElement, type ReactElement, type Re
 import { useAccess } from "@/lib/access";
 
 export type ActionKey = "view" | "create" | "edit" | "delete" | "print";
-export type SpecialKey = "custom_discount" | "change_price" | "sell_on_credit" | "end_session";
+export type SpecialKey = "custom_discount" | "change_price" | "sell_on_credit" | "end_session" | "session_details";
 
 /**
  * Central permission gate. Admin (owner) always bypasses. Otherwise the

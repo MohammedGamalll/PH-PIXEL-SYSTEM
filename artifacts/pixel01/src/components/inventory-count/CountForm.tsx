@@ -41,7 +41,7 @@ type Row = {
 };
 
 const PRODUCT_COLS =
-  "id,name,sku,stock,cost,expiry_date,is_active,has_expiry,main_unit,sub_unit_1,sub_unit_1_ratio,sub_unit_2,sub_unit_2_ratio";
+  "id,name,name_en,sku,stock,cost,is_active,has_expiry,main_unit,sub_unit_1,sub_unit_1_ratio,sub_unit_2,sub_unit_2_ratio";
 
 const dateRe = /^\d{4}-\d{2}-\d{2}$/;
 const headerSchema = z.object({ count_date: z.string().regex(dateRe, "Invalid date") });

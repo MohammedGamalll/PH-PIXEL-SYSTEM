@@ -909,7 +909,9 @@ export function CashierApp({ sessionId }: Props) {
           onClick={() => setProductsPanelOpen((v) => !v)}
         />
         <ToolbarBtn icon={<Maximize2 size={14} />} label={t("sales.cashier.fullscreen")} bg="#dfe3ea" fg="#3a4658" onClick={toggleFullscreen} />
-        <ToolbarBtn icon={<Info size={14} />} label={t("sales.cashier.session_details")} bg="#f5d8e0" fg="#c84c75" onClick={() => setSessionDetailsOpen(true)} />
+        {(isAdmin || canSpecial("pos", "session_details")) && (
+          <ToolbarBtn icon={<Info size={14} />} label={t("sales.cashier.session_details")} bg="#f5d8e0" fg="#c84c75" onClick={() => setSessionDetailsOpen(true)} />
+        )}
         {(isAdmin || canSpecial("pos", "end_session")) && (
           <ToolbarBtn icon={<LogOut size={14} />} label={t("sales.cashier.end_session")} bg="#f7c8c8" fg="#c43232" onClick={() => setCloseSessionOpen(true)} />
         )}
@@ -1220,12 +1222,12 @@ export function CashierApp({ sessionId }: Props) {
               </div>
               <div style={{
                 display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14,
-                flex: 1, minWidth: 200,
+                flex: 1, minWidth: 160,
                 padding: "8px 16px",
                 background: "#1a2a4a",
                 color: "#fff",
                 borderRadius: 8,
-                fontSize: 22,
+                fontSize: "clamp(13px, 3.5vw, 22px)",
                 fontWeight: 800,
                 fontFamily: POS_FONT,
               }}>
@@ -1392,7 +1394,7 @@ export function CashierApp({ sessionId }: Props) {
 
       {/* Calculator */}
       {calcOpen && (
-        <Modal title={t("sales.cashier.calculator")} onClose={() => setCalcOpen(false)} dir={dir}>
+        <Modal title={t("sales.cashier.calculator")} onClose={() => setCalcOpen(false)} dir={dir} wide>
           <Calculator />
         </Modal>
       )}
@@ -1813,8 +1815,8 @@ function Calculator() {
     { k: "0" }, { k: "." },
   ];
   const btnStyle = (v?: string): React.CSSProperties => ({
-    padding: "14px 0",
-    fontSize: 24,
+    padding: "18px 0",
+    fontSize: 30,
     fontWeight: 700,
     cursor: "pointer",
     borderRadius: 4,
@@ -1834,14 +1836,14 @@ function Calculator() {
         background: "linear-gradient(180deg,#064e3b,#022c22)",
         color: "#86efac",
         fontFamily: "'Consolas','Courier New',monospace",
-        fontSize: 42,
+        fontSize: 56,
         fontWeight: 700,
-        padding: "10px 12px",
+        padding: "14px 16px",
         textAlign: "right" as const,
         borderRadius: 4,
         marginBottom: 8,
         border: "2px inset #6b7280",
-        minHeight: 44,
+        minHeight: 60,
         overflow: "hidden" as const,
         textOverflow: "ellipsis",
         textShadow: "0 0 6px rgba(134,239,172,.6)",

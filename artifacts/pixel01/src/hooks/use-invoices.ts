@@ -401,12 +401,15 @@ export function useConvertSaleToCredit() {
       if (!inv) throw new Error("الفاتورة غير موجودة");
       const oldPaid = Number(inv.paid_amount || 0);
 
+      // Convert to a plain UNPAID invoice (غير مدفوعة) with the full value due.
+      // We intentionally do NOT tag payment_method as "credit" so it is not
+      // displayed/treated as a credit (آجل) invoice — it is simply unpaid.
       const { error } = await (supabase.from("invoices") as any)
         .update({
           customer_id: customerId,
           paid_amount: 0,
           payment_status: "unpaid",
-          payment_method: "credit",
+          payment_method: null,
           payment_splits: null,
           session_id: null,
           updated_at: new Date().toISOString(),

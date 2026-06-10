@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, ArrowLeft } from "lucide-react";
+import { ArrowRight, ArrowLeft, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { PageHeader } from "@/components/products/PageHeader";
 import { DataCard } from "@/components/products/DataCard";
 import { inputStyle } from "@/components/sales/cashier/win7";
@@ -25,13 +25,46 @@ export function LedgerPage({ accountId }: { accountId: string }) {
   const cellStyle: React.CSSProperties = { borderBottom: "1px solid #e5e7eb", padding: "6px 10px", color: "#374151", fontSize: 12 };
   const BackIcon = dir === "rtl" ? ArrowRight : ArrowLeft;
 
+  // Sorting (chronological balance is preserved per-row; sorting only changes display order)
+  const [sortKey, setSortKey] = useState<"time" | "ref" | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const toggleSort = (key: "time" | "ref") => {
+    if (sortKey !== key) { setSortKey(key); setSortDir("asc"); }
+    else if (sortDir === "asc") setSortDir("desc");
+    else { setSortKey(null); setSortDir("asc"); }
+  };
+
+  const fmtTime = (r: { created_at: string | null; entry_date: string }) => {
+    if (!r.created_at) return "—";
+    const d = new Date(r.created_at);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleTimeString(dir === "rtl" ? "ar-EG" : "en-US", { hour: "2-digit", minute: "2-digit" });
+  };
+
   const enriched = useMemo(() => {
     let running = opening;
-    return rows.map((r) => {
+    const withBalance = rows.map((r) => {
       running += debitNature ? r.debit - r.credit : r.credit - r.debit;
       return { ...r, balance: running };
     });
-  }, [rows, opening, debitNature]);
+    if (!sortKey) return withBalance;
+    const sorted = [...withBalance].sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === "time") {
+        cmp = String(a.created_at ?? a.entry_date).localeCompare(String(b.created_at ?? b.entry_date));
+      } else {
+        cmp = String(a.ref_no ?? "").localeCompare(String(b.ref_no ?? ""), undefined, { numeric: true });
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return sorted;
+  }, [rows, opening, debitNature, sortKey, sortDir]);
+
+  const SortIcon = ({ col }: { col: "time" | "ref" }) => {
+    if (sortKey !== col) return <ArrowUpDown className="inline h-3 w-3 opacity-50" />;
+    return sortDir === "asc" ? <ArrowUp className="inline h-3 w-3" /> : <ArrowDown className="inline h-3 w-3" />;
+  };
 
   const totalDebit = rows.reduce((s, r) => s + r.debit, 0);
   const totalCredit = rows.reduce((s, r) => s + r.credit, 0);
@@ -77,7 +110,20 @@ export function LedgerPage({ accountId }: { accountId: string }) {
             <thead>
               <tr>
                 <th style={headStyle}>{t("accounting.ledger.col.date")}</th>
-                <th style={headStyle}>{t("accounting.ledger.col.ref")}</th>
+                <th
+                  style={{ ...headStyle, cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }}
+                  onClick={() => toggleSort("time")}
+                  title="ترتيب حسب الوقت"
+                >
+                  الوقت <SortIcon col="time" />
+                </th>
+                <th
+                  style={{ ...headStyle, cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }}
+                  onClick={() => toggleSort("ref")}
+                  title="ترتيب حسب المرجع"
+                >
+                  {t("accounting.ledger.col.ref")} <SortIcon col="ref" />
+                </th>
                 <th style={headStyle}>{t("accounting.ledger.col.desc")}</th>
                 <th style={headStyle}>{t("accounting.ledger.col.method")}</th>
                 <th style={headStyle}>{t("accounting.ledger.col.type")}</th>
@@ -88,16 +134,17 @@ export function LedgerPage({ accountId }: { accountId: string }) {
             </thead>
             <tbody>
               <tr>
-                <td style={{ ...cellStyle, background: "#f9fafb", fontWeight: 600 }} colSpan={7}>{t("accounting.ledger.opening_row")}</td>
+                <td style={{ ...cellStyle, background: "#f9fafb", fontWeight: 600 }} colSpan={8}>{t("accounting.ledger.opening_row")}</td>
                 <td style={{ ...cellStyle, background: "#f9fafb", fontWeight: 600 }}>{fmt(opening)}</td>
               </tr>
               {isLoading ? (
-                <tr><td colSpan={8} style={{ ...cellStyle, textAlign: "center" }}>{t("accounting.loading")}</td></tr>
+                <tr><td colSpan={9} style={{ ...cellStyle, textAlign: "center" }}>{t("accounting.loading")}</td></tr>
               ) : enriched.length === 0 ? (
-                <tr><td colSpan={8} style={{ ...cellStyle, textAlign: "center", color: "#9ca3af" }}>{t("accounting.no_movements")}</td></tr>
+                <tr><td colSpan={9} style={{ ...cellStyle, textAlign: "center", color: "#9ca3af" }}>{t("accounting.no_movements")}</td></tr>
               ) : enriched.map((r) => (
                 <tr key={r.line_id}>
                   <td style={cellStyle}>{r.entry_date}</td>
+                  <td style={{ ...cellStyle, whiteSpace: "nowrap" }}>{fmtTime(r)}</td>
                   <td style={cellStyle}>{r.ref_no || "—"}</td>
                   <td style={cellStyle}>{r.description || "—"}</td>
                   <td style={cellStyle}>{r.payment_method || "—"}</td>
@@ -108,7 +155,7 @@ export function LedgerPage({ accountId }: { accountId: string }) {
                 </tr>
               ))}
               <tr>
-                <td style={{ ...cellStyle, background: "#f3f4f6", fontWeight: 700 }} colSpan={5}>{t("accounting.ledger.total_row")}</td>
+                <td style={{ ...cellStyle, background: "#f3f4f6", fontWeight: 700 }} colSpan={6}>{t("accounting.ledger.total_row")}</td>
                 <td style={{ ...cellStyle, background: "#f3f4f6", fontWeight: 700, color: "#166534" }}>{fmt(totalDebit)}</td>
                 <td style={{ ...cellStyle, background: "#f3f4f6", fontWeight: 700, color: "#991b1b" }}>{fmt(totalCredit)}</td>
                 <td style={{ ...cellStyle, background: "#f3f4f6", fontWeight: 700 }}>{fmt(closing)}</td>

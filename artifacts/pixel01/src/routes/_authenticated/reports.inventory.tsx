@@ -53,11 +53,6 @@ function InventoryReportPage() {
     { key: "unit", label: "الوحدة", visible: true },
     { key: "price", label: t("reports.col.sale_price"), visible: true },
     { key: "stock", label: t("reports.col.stock"), visible: true },
-    { key: "stock_value_cost", label: t("reports.col.stock_value_cost"), visible: true },
-    { key: "stock_value_sell", label: t("reports.col.stock_value_sell"), visible: true },
-    { key: "potential_profit", label: t("reports.col.potential_profit"), visible: true },
-    { key: "sold_units", label: t("reports.col.sold_units"), visible: true },
-    { key: "damaged_units", label: t("reports.col.damaged_units"), visible: true },
   ];
 
   const { data: products = [] } = useQuery({
@@ -313,11 +308,7 @@ function InventoryReportPage() {
           if (typeof v === "number") return v.toFixed(2);
           return v;
         }}
-        numericKeys={[
-          "stock_value_cost",
-          "stock_value_sell",
-          "potential_profit",
-        ]}
+        numericKeys={[]}
         exportName="inventory-report"
         printTitle="inventory-report"
       />

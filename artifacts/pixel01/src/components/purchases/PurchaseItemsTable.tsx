@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Search, Trash2, Plus } from "lucide-react";
-import { unitOptions, toBase, toMainUnits, formatBaseQuantity, type UnitLevel, type ProductUnitTree } from "@/lib/units";
+import { unitOptions, toBase, toMainUnits, formatBaseQuantity, baseUnitsPer, type UnitLevel, type ProductUnitTree } from "@/lib/units";
+import { priceForUnitLevel } from "@/lib/stock-display";
 import { useI18n } from "@/lib/i18n";
 import { DateInput } from "@/components/shared/DateInput";
 import { normalizeArabicText } from "@/lib/arabic";
@@ -18,6 +19,8 @@ export type Row = {
   description: string;
   quantity: number;
   unit_price: number;
+  /** Cost per MAIN unit — used to derive per-unit cost when the unit level changes. */
+  base_price?: number;
   discount_percent: number;
   total: number;
   sell_price: number;
@@ -121,7 +124,8 @@ export function PurchaseItemsTable({
       product_id: p.id,
       description: p.name,
       quantity: 1,
-      unit_price: Number(p.cost ?? 0),
+      unit_price: priceForUnitLevel({ ...tree, price: Number(p.cost ?? 0) }, first.level, baseUnitsPer),
+      base_price: Number(p.cost ?? 0),
       discount_percent: 0,
       total: Number(p.cost ?? 0),
       sell_price: Number(p.price ?? 0),
@@ -184,7 +188,11 @@ export function PurchaseItemsTable({
     const r = rows[i];
     const choice = r.unit_choices.find((c) => c.level === level);
     if (!choice) return;
-    update(i, { unit_level: level, unit_name: choice.name, base_factor: choice.ratio });
+    // Divide the per-MAIN-unit cost down the unit tree, exactly like Sales does.
+    const newPrice = r.product_units
+      ? priceForUnitLevel({ ...r.product_units, price: r.base_price ?? r.unit_price }, level, baseUnitsPer)
+      : (r.base_price ?? r.unit_price) * (choice.ratio || 1);
+    update(i, { unit_level: level, unit_name: choice.name, base_factor: choice.ratio, unit_price: newPrice });
   };
 
   const remove = (i: number) => onChange(rows.filter((_, idx) => idx !== i));

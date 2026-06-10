@@ -10,6 +10,7 @@ import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import { requireTreasuryAccountId } from "@/lib/treasury-account";
 import { baseUnitsPer, toBase, formatBaseQuantity, type UnitLevel, unitOptions } from "@/lib/units";
+import { priceForUnitLevel } from "@/lib/stock-display";
 import { normalizeArabicText } from "@/lib/arabic";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -33,12 +34,11 @@ function rowId() {
 }
 
 /** Price for one unit at `level`, derived from the product's MAIN-unit price.
- *  Main price is divided down across the smaller units. */
+ *  Uses the same shared helper as Sales/Purchases so a main price of 20 with a
+ *  2×10 unit tree yields strip = 10 and pill = 1 (single division, not double). */
 function unitPriceForLevel(p: any, level: UnitLevel, dir: Dir): number {
   const mainPrice = dir === "incoming" ? Number(p?.cost || 0) : Number(p?.price ?? p?.sell_price ?? 0);
-  const perMain = baseUnitsPer(p || {}, "main") || 1;
-  const perLevel = baseUnitsPer(p || {}, level) || 1;
-  return Number(((mainPrice * perLevel) / perMain).toFixed(4));
+  return priceForUnitLevel({ ...(p || {}), price: mainPrice }, level, baseUnitsPer);
 }
 
 function rowTotal(r: ExchangeRow): number {
@@ -195,7 +195,9 @@ function ItemExchangePage() {
             direction: r.direction,
             product_id: r.product_id,
             product_name_snapshot: p?.name || null,
+            quantity: Number(r.quantity || 0),
             base_quantity: baseQty,
+            unit_price: Number(r.unit_price || 0),
             total: rowTotal(r),
           };
         });
@@ -205,23 +207,58 @@ function ItemExchangePage() {
         return;
       }
 
-      // 1) Update stock (base unit) for every involved product
-      const stockMap = new Map<string, number>((products as any[]).map((p: any) => [p.id, Number(p.stock || 0)]));
-      for (const item of itemsPayload) {
-        const cur = Number(stockMap.get(item.product_id) || 0);
-        const delta = item.direction === "incoming" ? Number(item.base_quantity || 0) : -Number(item.base_quantity || 0);
-        stockMap.set(item.product_id, cur + delta);
-      }
-      const touchedIds = new Set(itemsPayload.map((i) => i.product_id));
-      for (const productId of touchedIds) {
-        const { error } = await (supabase.from("products") as any)
-          .update({ stock: stockMap.get(productId) })
-          .eq("id", productId)
-          .eq("owner_id", ownerId);
-        if (error) throw error;
+      // 1) Persist the exchange as a durable inventory movement so it survives
+      //    any future stock recalculation (and reflects in the Item Card).
+      const { data: header, error: headerErr } = await (supabase.from("item_exchanges") as any)
+        .insert({
+          owner_id: ownerId,
+          reference: exchangeRef,
+          contact_id: contactId,
+          contact_type: contactScope,
+          treasury_id: treasuryId,
+          exchange_date: exchangeDate,
+          notes: notes || null,
+          net_cash: netCash,
+          created_by: user.id,
+        })
+        .select("id")
+        .single();
+      if (headerErr) throw headerErr;
+
+      const { error: itemsErr } = await (supabase.from("item_exchange_items") as any).insert(
+        itemsPayload.map((it) => ({
+          exchange_id: header.id,
+          product_id: it.product_id,
+          product_name_snapshot: it.product_name_snapshot,
+          direction: it.direction,
+          quantity: it.quantity,
+          base_quantity: it.base_quantity,
+          unit_price: it.unit_price,
+          total: it.total,
+        })),
+      );
+      if (itemsErr) throw itemsErr;
+
+      // 2) Recalculate product/warehouse stock from all movements (incl. this
+      //    exchange) so the selected unit is honoured and Current Inventory matches.
+      const { error: recalcErr } = await (supabase as any).rpc("recalc_product_stock");
+      if (recalcErr) {
+        // Fallback: apply the delta directly if recalc is unavailable.
+        const stockMap = new Map<string, number>((products as any[]).map((p: any) => [p.id, Number(p.stock || 0)]));
+        for (const item of itemsPayload) {
+          const cur = Number(stockMap.get(item.product_id) || 0);
+          const delta = item.direction === "incoming" ? Number(item.base_quantity || 0) : -Number(item.base_quantity || 0);
+          stockMap.set(item.product_id, cur + delta);
+        }
+        for (const productId of new Set(itemsPayload.map((i) => i.product_id))) {
+          await (supabase.from("products") as any)
+            .update({ stock: stockMap.get(productId) })
+            .eq("id", productId)
+            .eq("owner_id", ownerId);
+        }
       }
 
-      // 2) Record cash difference in treasury + contact ledger (existing tables only)
+      // 3) Record cash difference in treasury + contact ledger (existing tables only)
       if (Math.abs(netCash) > 0.0001) {
         const txType = netCash >= 0 ? "in" : "out";
         const txAmount = Math.abs(netCash);

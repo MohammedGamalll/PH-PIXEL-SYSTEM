@@ -115,10 +115,12 @@ function ItemCardPage() {
         contacts,
         suppliers,
         pReturns,
+        prItems,
         btSrc,
         btTgt,
         srItems,
         srHeaders,
+        excItems,
       ] = await Promise.all([
         (supabase.from("purchase_items") as any)
           .select(
@@ -152,6 +154,11 @@ function ItemCardPage() {
         (supabase.from("purchase_returns") as any).select(
           "id,ref_no,return_date,purchase_id,total_amount,created_at",
         ),
+        (supabase.from("purchase_return_items") as any)
+          .select(
+            "id,purchase_return_id,quantity,base_quantity,unit_name,unit_price,total,purchase_returns!inner(id,ref_no,return_date,purchase_id,created_at)",
+          )
+          .eq("product_id", id),
         (supabase.from("inventory_branch_transfer_items") as any)
           .select(
             "id,transfer_id,quantity,base_quantity,unit_name,inventory_branch_transfers!inner(id,transfer_date,created_at,target_name_snapshot,created_by_name_snapshot)",
@@ -164,12 +171,17 @@ function ItemCardPage() {
           .eq("target_product_id", id),
         (supabase.from("standalone_return_items") as any)
           .select(
-            "id,standalone_return_id,quantity,unit_price,total,expiry_date",
+            "id,standalone_return_id,quantity,base_quantity,unit_price,total,expiry_date",
           )
           .eq("product_id", id),
         (supabase.from("standalone_returns") as any).select(
           "id,reference_no,return_type,return_date,reason,created_at,created_by_name_snapshot",
         ),
+        (supabase.from("item_exchange_items") as any)
+          .select(
+            "id,exchange_id,direction,quantity,base_quantity,unit_price,total,item_exchanges!inner(id,reference,exchange_date,notes,created_at)",
+          )
+          .eq("product_id", id),
       ]);
       for (const r of [
         pItems,
@@ -192,10 +204,12 @@ function ItemCardPage() {
         contacts: contacts.data ?? [],
         suppliers: suppliers.data ?? [],
         pReturns: pReturns.data ?? [],
+        prItems: prItems.data ?? [],
         btSrc: btSrc.data ?? [],
         btTgt: btTgt.data ?? [],
         srItems: srItems.data ?? [],
         srHeaders: srHeaders.data ?? [],
+        excItems: excItems.data ?? [],
       };
     },
   });
@@ -222,6 +236,7 @@ function ItemCardPage() {
       sold: 0,
       salesReturn: 0,
       purchaseReturnCount: 0,
+      purchaseReturnQty: 0,
       damaged: 0,
       current: 0,
     };
@@ -258,6 +273,7 @@ function ItemCardPage() {
       sold = 0,
       salesReturn = 0,
       purchaseReturnCount = 0,
+      purchaseReturnQty = 0,
       damaged = 0;
 
     const adjLabel = lang === "ar" ? "تسوية جرد" : "Stock adjustment";
@@ -343,29 +359,31 @@ function ItemCardPage() {
       });
     }
 
-    // Purchase returns: header-only (no line items in schema). Show as events
-    // tied to purchases that contained this product. Quantity unknown.
-    for (const pr of bundle.pReturns as any[]) {
-      if (!pr.purchase_id || !productPurchaseIds.has(pr.purchase_id)) continue;
-      const p = purchMap.get(pr.purchase_id);
+    // Purchase returns: use the actual return line items so the returned
+    // quantity and the stock change show instead of "—".
+    for (const it of (bundle as any).prItems as any[]) {
+      const h = it.purchase_returns ?? {};
+      const baseQty = Number(it.base_quantity ?? it.quantity ?? 0);
+      const p = h.purchase_id ? purchMap.get(h.purchase_id) : null;
       purchaseReturnCount += 1;
+      purchaseReturnQty += baseQty;
       out.push({
-        id: `pr-${pr.id}`,
+        id: `pr-${it.id}`,
         type: t("products.card.purchase_return"),
-        date: fmtDate(pr.created_at ?? pr.return_date),
-        ref: pr.ref_no || "",
-        purchaseId: pr.purchase_id,
+        date: fmtDate(h.created_at ?? h.return_date),
+        ref: h.ref_no || "",
+        purchaseId: h.purchase_id || null,
         party:
           p?.supplier_name_snapshot ||
           (p?.supplier_id
             ? supMap.get(p.supplier_id) || partyMap.get(p.supplier_id) || ""
             : "") ||
           "بدون مورد",
-        qty: 0,
-        qtyLabel: "—",
-        delta: 0,
+        qty: baseQty,
+        qtyLabel: `${Number(it.quantity ?? 0)} ${it.unit_name || ""}`.trim(),
+        delta: -baseQty,
         expiry: "—",
-        _sort: pr.created_at ?? pr.return_date ?? "",
+        _sort: h.created_at ?? h.return_date ?? "",
       });
     }
 
@@ -378,10 +396,11 @@ function ItemCardPage() {
     for (const it of ((bundle as any).srItems || []) as any[]) {
       const h = srHdrMap.get(it.standalone_return_id);
       if (!h) continue;
-      const qty = Math.abs(Number(it.quantity ?? 0));
+      // Use the persisted base_quantity so the selected unit is honoured.
+      const baseQty = Math.abs(Number(it.base_quantity ?? it.quantity ?? 0));
       const isSales = h.return_type === "sales";
-      if (isSales) standaloneSalesRet += qty;
-      else standalonePurchRet += qty;
+      if (isSales) standaloneSalesRet += baseQty;
+      else standalonePurchRet += baseQty;
       out.push({
         id: `sr-${it.id}`,
         type: isSales
@@ -390,9 +409,9 @@ function ItemCardPage() {
         date: fmtDate(h.created_at ?? h.return_date),
         ref: h.reference_no || "",
         party: h.reason || h.created_by_name_snapshot || "مرتجع حر",
-        qty,
-        qtyLabel: String(qty),
-        delta: isSales ? +qty : -qty,
+        qty: baseQty,
+        qtyLabel: formatBaseQuantity(baseQty, product as any),
+        delta: isSales ? +baseQty : -baseQty,
         expiry: expiryCell(it.expiry_date),
         _sort: h.created_at ?? h.return_date ?? "",
       });
@@ -441,6 +460,34 @@ function ItemCardPage() {
       });
     }
 
+    // Item exchanges — incoming raises stock, outgoing lowers it.
+    let exchangeIn = 0,
+      exchangeOut = 0;
+    for (const it of ((bundle as any).excItems || []) as any[]) {
+      const h = it.item_exchanges ?? {};
+      const baseQty = Number(it.base_quantity ?? it.quantity ?? 0);
+      const isIncoming = it.direction === "incoming";
+      if (isIncoming) exchangeIn += baseQty;
+      else exchangeOut += baseQty;
+      out.push({
+        id: `exc-${it.id}`,
+        type: isIncoming
+          ? lang === "ar" ? "تبادل وارد" : "Exchange in"
+          : lang === "ar" ? "تبادل صادر" : "Exchange out",
+        date: fmtDate(h.created_at ?? h.exchange_date),
+        ref: h.reference || "",
+        party: h.notes || (lang === "ar" ? "تبادل أصناف" : "Item exchange"),
+        qty: baseQty,
+        qtyLabel: formatBaseQuantity(baseQty, product as any),
+        delta: isIncoming ? +baseQty : -baseQty,
+        expiry: "—",
+        _sort: h.created_at ?? h.exchange_date ?? "",
+      });
+    }
+    void exchangeIn;
+    void exchangeOut;
+    void productPurchaseIds;
+
     const typeRank: Record<string, number> = {
       [t("products.card.opening")]: 0,
       [t("products.card.purchase")]: 1,
@@ -468,6 +515,7 @@ function ItemCardPage() {
         sold: sold + standalonePurchRet,
         salesReturn: salesReturn + standaloneSalesRet,
         purchaseReturnCount,
+        purchaseReturnQty,
         damaged,
         current: actualStock,
       },
@@ -688,7 +736,7 @@ function ItemCardPage() {
         />
         <StatCard
           label={t("products.card.returned_out")}
-          value={String(stats.purchaseReturnCount)}
+          value={fmtBase(stats.purchaseReturnQty)}
           accent="#f59e0b"
         />
         <StatCard

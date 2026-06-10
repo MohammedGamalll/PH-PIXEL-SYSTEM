@@ -14,6 +14,7 @@ import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { InvoiceDetailsModal } from "@/components/sales/InvoiceDetailsModal";
 import { PrintableInvoice, type PrintMode } from "@/components/sales/PrintableInvoice";
 import { useI18n } from "@/lib/i18n";
+import { useCan } from "@/lib/can";
 import { useSessionStandaloneReturns } from "@/hooks/use-cashier-session";
 import { StandaloneReturnDetailsModal } from "@/components/returns/StandaloneReturnDetailsModal";
 import type { SessionStandaloneReturn } from "@/lib/cashier-session-data";
@@ -186,6 +187,8 @@ function SessionInvoices({ sessionId, onView }: { sessionId: string; onView: (in
 
 function CashierLog() {
   const { t, lang, dir } = useI18n();
+  const { isAdmin, canSpecial } = useCan();
+  const canViewSessionDetails = isAdmin || canSpecial("pos", "session_details");
   const { data: sessions = [], isLoading } = useCashierSessions();
   const { data: customers = [] } = useContacts("customer");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -264,14 +267,16 @@ function CashierLog() {
                     <Fragment key={s.id}>
                       <tr>
                         <td className="p-2" style={cellBorder}>
-                          <button
-                            type="button"
-                            onClick={() => setExpanded((m) => ({ ...m, [s.id]: !m[s.id] }))}
-                            className="p-1 rounded hover:bg-gray-100"
-                            aria-label={t("sales.cashier.expand")}
-                          >
-                            {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevCollapsed className="h-4 w-4" />}
-                          </button>
+                          {canViewSessionDetails && (
+                            <button
+                              type="button"
+                              onClick={() => setExpanded((m) => ({ ...m, [s.id]: !m[s.id] }))}
+                              className="p-1 rounded hover:bg-gray-100"
+                              aria-label={t("sales.cashier.expand")}
+                            >
+                              {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevCollapsed className="h-4 w-4" />}
+                            </button>
+                          )}
                         </td>
                         <td className="p-2" style={cellBorder}>{i + 1}</td>
                         <td className="p-2" style={cellBorder}>{new Date(s.opened_at).toLocaleString(locale)}</td>
@@ -304,7 +309,7 @@ function CashierLog() {
                           )}
                         </td>
                       </tr>
-                      {isOpen && (
+                      {isOpen && canViewSessionDetails && (
                         <tr>
                           <td colSpan={8} style={cellBorder}>
                             <SessionInvoices sessionId={s.id} onView={(inv) => setViewing(inv)} />

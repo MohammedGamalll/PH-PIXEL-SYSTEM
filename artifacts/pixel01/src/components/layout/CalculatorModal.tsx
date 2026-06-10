@@ -68,8 +68,8 @@ export function CalculatorModal({ open, onClose }: Props) {
   if (!open) return null;
 
   const btnStyle = (variant: "num" | "op" | "eq" | "clr" = "num"): React.CSSProperties => ({
-    height: 44,
-    fontSize: 24,
+    height: 52,
+    fontSize: 28,
     fontWeight: 700,
     cursor: "pointer",
     borderRadius: 4,
@@ -93,7 +93,7 @@ export function CalculatorModal({ open, onClose }: Props) {
         onClick={(e) => e.stopPropagation()}
         style={{
           width: "100%",
-          maxWidth: 320,
+          maxWidth: 420,
           background: "linear-gradient(180deg,#f3f4f6,#cbd5e1)",
           border: "1px solid #6b7280",
           borderRadius: 6,
@@ -126,8 +126,8 @@ export function CalculatorModal({ open, onClose }: Props) {
             border: "2px inset #6b7280",
             textShadow: "0 0 6px rgba(134,239,172,.6)",
           }}>
-            <div style={{ fontSize: 16, minHeight: 20, opacity: 0.7, wordBreak: "break-all" }}>{expr || "\u00A0"}</div>
-            <div style={{ fontSize: 39, fontWeight: 700, wordBreak: "break-all" }}>{result}</div>
+            <div style={{ fontSize: 24, minHeight: 28, opacity: 0.7, wordBreak: "break-all" }}>{expr || "\u00A0"}</div>
+            <div style={{ fontSize: 56, fontWeight: 700, wordBreak: "break-all" }}>{result}</div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 5 }}>
             <Btn variant="clr" onClick={clear}>C</Btn>

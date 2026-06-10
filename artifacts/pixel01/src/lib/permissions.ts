@@ -11,6 +11,7 @@ export type ModulePermissions = ModuleActions & {
   change_price?: boolean;
   sell_on_credit?: boolean;
   end_session?: boolean;
+  session_details?: boolean;
 };
 
 export type EmployeePermissionsV2 = {
@@ -18,7 +19,7 @@ export type EmployeePermissionsV2 = {
 };
 
 export type SpecialPermissionDef = {
-  key: "custom_discount" | "change_price" | "sell_on_credit" | "end_session";
+  key: "custom_discount" | "change_price" | "sell_on_credit" | "end_session" | "session_details";
   label: string;
 };
 
@@ -58,6 +59,7 @@ export const PERMISSION_GROUPS: GroupDef[] = [
           { key: "change_price", label: "تغيير السعر" },
           { key: "sell_on_credit", label: "البيع الآجل" },
           { key: "end_session", label: "إنهاء جلسة الكاشير" },
+          { key: "session_details", label: "عرض تفاصيل الجلسة" },
         ],
       },
       { key: "sales_invoices", name_ar: "فواتير المبيعات", disabledActions: NO_DELETE },

@@ -22,6 +22,8 @@ export function PurchaseReturnModal({
   // For edit mode: load existing return items + all other returns for caps
   const [existingItems, setExistingItems] = useState<any[]>([]);
   const [otherReturnedByKey, setOtherReturnedByKey] = useState<Record<string, number>>({});
+  // Current on-hand stock (base units) per product — caps returns at what's left.
+  const [stockByProduct, setStockByProduct] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (!open || !purchase) return;
@@ -54,6 +56,20 @@ export function PurchaseReturnModal({
     })();
   }, [open, purchase?.id, existingReturn?.id, isEdit]);
 
+  // Load current stock for the products on this purchase so returns can't exceed
+  // what's physically left (some may already have been sold).
+  useEffect(() => {
+    if (!open) return;
+    const productIds = Array.from(new Set((items as any[]).map((it) => it.product_id).filter(Boolean)));
+    if (productIds.length === 0) { setStockByProduct({}); return; }
+    (async () => {
+      const { data } = await supabase.from("products").select("id, stock").in("id", productIds);
+      const map: Record<string, number> = {};
+      for (const p of (data ?? []) as any[]) map[p.id] = Number(p.stock || 0);
+      setStockByProduct(map);
+    })();
+  }, [open, items]);
+
   useEffect(() => {
     if (!open) return;
     if (isEdit && existingReturn) {
@@ -78,13 +94,37 @@ export function PurchaseReturnModal({
 
   const itemKey = (it: any) => `${it.product_id ?? ""}|${it.description ?? ""}`;
 
+  // Base units already returned by THIS return per key (added back in edit mode
+  // since current stock already reflects this return's deduction).
+  const existingBaseByKey = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const it of existingItems) {
+      const k = `${it.product_id ?? ""}|${it.description ?? ""}`;
+      m[k] = (m[k] ?? 0) + Number(it.base_quantity ?? it.quantity ?? 0);
+    }
+    return m;
+  }, [existingItems]);
+
   const lines = useMemo(() => (items as any[]).map((it) => {
     const q = Number(qtys[it.id] || 0);
     const subtotal = q * Number(it.unit_price || 0);
     const otherReturned = otherReturnedByKey[itemKey(it)] || 0;
-    const maxAllowed = Math.max(0, Number(it.quantity || 0) - otherReturned);
-    return { ...it, return_qty: q, subtotal, maxAllowed, otherReturned };
-  }), [items, qtys, otherReturnedByKey]);
+    const purchaseRemaining = Math.max(0, Number(it.quantity || 0) - otherReturned);
+
+    // Cap by current inventory: convert on-hand base stock into this line's unit.
+    let maxAllowed = purchaseRemaining;
+    let stockCapUnits: number | null = null;
+    if (it.product_id) {
+      const basePerUnit = Number(it.quantity || 0) > 0
+        ? Number(it.base_quantity || it.quantity || 0) / Number(it.quantity)
+        : 1;
+      const stockBase = Number(stockByProduct[it.product_id] ?? 0)
+        + (isEdit ? Number(existingBaseByKey[itemKey(it)] ?? 0) : 0);
+      stockCapUnits = basePerUnit > 0 ? Math.floor((stockBase / basePerUnit) + 1e-6) : 0;
+      maxAllowed = Math.max(0, Math.min(purchaseRemaining, stockCapUnits));
+    }
+    return { ...it, return_qty: q, subtotal, maxAllowed, otherReturned, stockCapUnits };
+  }), [items, qtys, otherReturnedByKey, stockByProduct, existingBaseByKey, isEdit]);
 
   const totalAmount = lines.reduce((s, l) => s + l.subtotal, 0);
   const taxTotal = 0;
@@ -178,6 +218,8 @@ export function PurchaseReturnModal({
                   <div className="text-[11px] text-gray-500 mt-1">
                     المتاح: {it.maxAllowed}
                     {it.otherReturned > 0 ? ` (مرتجع سابقًا: ${it.otherReturned})` : ""}
+                    {it.stockCapUnits != null && it.stockCapUnits < (Number(it.quantity || 0) - it.otherReturned)
+                      ? ` (محدود بالمخزون الحالي)` : ""}
                   </div>
                 </td>
                 <td style={cell}>{(Number(qtys[it.id] || 0) * Number(it.unit_price || 0)).toFixed(2)} ج.م</td>

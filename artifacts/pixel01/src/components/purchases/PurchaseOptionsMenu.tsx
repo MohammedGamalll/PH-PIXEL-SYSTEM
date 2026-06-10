@@ -18,7 +18,7 @@ export function PurchaseOptionsMenu({ onAction }: { onAction: (a: PurchaseAction
     <DropdownMenu>
       <DropdownMenuTrigger
         className="h-8 px-3 rounded-md text-xs inline-flex items-center gap-1"
-        style={{ backgroundColor: "#6366f1", color: "#ffffff", border: "1px solid #4f46e5" }}
+        style={{ backgroundColor: "#6366f1", color: "#ffffff", border: "1px solid #4f46e5", whiteSpace: "nowrap" }}
         onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#4f46e5")}
         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#6366f1")}
       >

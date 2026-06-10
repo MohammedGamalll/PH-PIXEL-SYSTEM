@@ -2,8 +2,7 @@ import { useRef } from "react";
 import { createPortal } from "react-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Printer, Mail } from "lucide-react";
-import { toast } from "sonner";
+import { Printer } from "lucide-react";
 import { PrintablePaymentReceipt } from "./PrintablePurchase";
 import { usePurchasePayments } from "@/hooks/use-purchases";
 
@@ -51,12 +50,6 @@ export function PurchasePaymentsModal({
               <div><b>حالة الشراء:</b> {purchase.status}</div>
               <div><b>حالة الدفع:</b> {purchase.payment_status}</div>
             </div>
-          </div>
-
-          <div className="mt-3">
-            <Button size="sm" className="bg-cyan-500 hover:bg-cyan-600" onClick={() => toast.info("ميزة الإخطار قريباً")}>
-              <Mail className="h-4 w-4 me-1" /> اخطار بالمدفوعات
-            </Button>
           </div>
 
           <div className="overflow-x-auto -mx-3 sm:mx-0 mt-3"><table className="w-full min-w-[640px]" style={{ borderCollapse: "collapse", border: "1px solid #e5e7eb" }}>

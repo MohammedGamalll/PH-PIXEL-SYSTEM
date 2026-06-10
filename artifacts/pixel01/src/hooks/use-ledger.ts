@@ -6,6 +6,7 @@ export type LedgerRow = {
   line_id: string;
   entry_id: string;
   entry_date: string;
+  created_at: string | null;
   description: string | null;
   ref_no: string | null;
   payment_method: string | null;
@@ -21,13 +22,14 @@ export function useAccountLedger(accountId?: string, from?: string, to?: string)
     enabled: !!user && !!accountId,
     queryFn: async (): Promise<LedgerRow[]> => {
       const { data, error } = await (supabase.from("journal_entry_lines") as any)
-        .select("id,debit,credit,journal_entries!inner(id,entry_date,description,ref_no,payment_method,source_type,owner_id)")
+        .select("id,debit,credit,journal_entries!inner(id,entry_date,created_at,description,ref_no,payment_method,source_type,owner_id)")
         .eq("account_id", accountId);
       if (error) throw error;
       const rows: LedgerRow[] = (data ?? []).map((l: any) => ({
         line_id: l.id,
         entry_id: l.journal_entries.id,
         entry_date: l.journal_entries.entry_date,
+        created_at: l.journal_entries.created_at ?? null,
         description: l.journal_entries.description,
         ref_no: l.journal_entries.ref_no,
         payment_method: l.journal_entries.payment_method,
@@ -37,7 +39,11 @@ export function useAccountLedger(accountId?: string, from?: string, to?: string)
       }));
       return rows
         .filter((r) => (!from || r.entry_date >= from) && (!to || r.entry_date <= to))
-        .sort((a, b) => a.entry_date.localeCompare(b.entry_date));
+        .sort((a, b) => {
+          const d = a.entry_date.localeCompare(b.entry_date);
+          if (d !== 0) return d;
+          return String(a.created_at ?? "").localeCompare(String(b.created_at ?? ""));
+        });
     },
   });
 }

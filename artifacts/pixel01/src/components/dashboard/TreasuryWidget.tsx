@@ -19,6 +19,8 @@ export function TreasuryWidget() {
         "الأصول المتداولة", "Current Assets", "نقدية", "بنوك", "نقدية وبنوك", "Cash", "Bank", "Cash & Bank", "Cash and Bank"
       ];
 
+      const MAIN_NAMES = ["الخزنة الرئيسية", "الخزينة الرئيسية"];
+      const isMain = (a: any) => !!a.is_default_cash || MAIN_NAMES.includes((a.name || "").trim());
       return (data ?? [])
         .filter((a: any) => {
           const sub = (a.sub_account_type || "").trim();
@@ -33,6 +35,13 @@ export function TreasuryWidget() {
             ? (acc.opening_balance || 0) + d - c
             : (acc.opening_balance || 0) + c - d;
           return { ...acc, balance };
+        })
+        // Always surface the Main Treasury (الخزنة الرئيسية) first, then the rest by name.
+        .sort((a: any, b: any) => {
+          const am = isMain(a), bm = isMain(b);
+          if (am && !bm) return -1;
+          if (!am && bm) return 1;
+          return String(a.name || "").localeCompare(String(b.name || ""), "ar");
         });
     },
     refetchInterval: 30000,

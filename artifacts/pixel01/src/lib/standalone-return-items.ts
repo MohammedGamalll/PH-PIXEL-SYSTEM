@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { priceForUnitLevel } from "@/lib/stock-display";
 import {
   baseUnitsPer,
+  formatBaseQuantity,
   formatMainQuantity,
   toBase,
   toMainUnits,
@@ -21,6 +22,7 @@ type RawReturnItem = {
   product_id: string | null;
   product_name_snapshot: string | null;
   quantity: number;
+  base_quantity?: number | null;
   unit_price: number;
   total: number;
   expiry_date?: string | null;
@@ -91,9 +93,14 @@ export function toStandaloneReturnDisplayItem(
     };
   }
 
+  // Prefer the persisted base_quantity (honours the exact unit selected at
+  // return time); fall back to inferring the level from the price only for
+  // legacy rows saved before base_quantity existed.
   const level = inferUnitLevel(product, unitPrice, returnType);
-  const baseQty = toBase(qty, level, product);
-  const quantityLabel = formatMainQuantity(baseQty, product);
+  const baseQty = raw.base_quantity != null && Number(raw.base_quantity) > 0
+    ? Number(raw.base_quantity)
+    : toBase(qty, level, product);
+  const quantityLabel = formatBaseQuantity(baseQty, product);
   const perMain = baseUnitsPer(product, "main") || 1;
   const perLevel = baseUnitsPer(product, level) || 1;
   const mainQty = toMainUnits(baseQty, product);
@@ -134,7 +141,7 @@ export async function fetchStandaloneReturnItems(
 
   const { data: items, error } = await (supabase.from("standalone_return_items") as any)
     .select(
-      "standalone_return_id, product_id, product_name_snapshot, quantity, unit_price, total, expiry_date",
+      "standalone_return_id, product_id, product_name_snapshot, quantity, base_quantity, unit_price, total, expiry_date",
     )
     .in("standalone_return_id", ids);
 
