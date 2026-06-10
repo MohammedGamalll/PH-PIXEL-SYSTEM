@@ -363,6 +363,9 @@ export function useCreatePurchaseReturn() {
       qc.invalidateQueries({ queryKey: ["purchases"] });
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["stock-alert"] });
+      qc.invalidateQueries({ queryKey: ["product-batches"] });
+      qc.invalidateQueries({ queryKey: ["item-card-bundle"] });
+      qc.invalidateQueries({ queryKey: ["product-card"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
       toast.success("تم حفظ المرتجع");
     },
@@ -403,6 +406,9 @@ export function useUpdatePurchaseReturn() {
       qc.invalidateQueries({ queryKey: ["purchases"] });
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["stock-alert"] });
+      qc.invalidateQueries({ queryKey: ["product-batches"] });
+      qc.invalidateQueries({ queryKey: ["item-card-bundle"] });
+      qc.invalidateQueries({ queryKey: ["product-card"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
       toast.success("تم تحديث المرتجع");
     },
@@ -426,7 +432,9 @@ export function useAddPurchasePayment() {
     }) => {
       const total = Number(args.purchase.total || 0);
       const oldPaid = Number(args.purchase.paid_amount || 0);
-      const remaining = Math.max(0, total - oldPaid);
+      const remaining = Number.isFinite(Number(args.purchase.due_amount))
+        ? Math.max(0, Number(args.purchase.due_amount || 0))
+        : Math.max(0, total - oldPaid);
       const amt = Number(args.amount || 0);
       if (amt <= 0) throw new Error("المبلغ يجب أن يكون أكبر من صفر");
 
@@ -508,11 +516,14 @@ export function useAddPurchasePayment() {
 
       // 3) Distribute any surplus across other open purchases (oldest first)
       const surplus = Math.max(0, amt - applyToThis);
-      try {
-        const { resettleContactDebt } = await import("@/lib/debt-allocation.functions");
-        await resettleContactDebt({ data: { contact_id: supplierId, direction: "out" } });
-      } catch (err) {
-        console.warn("resettleContactDebt (supplier) failed", err);
+      if (surplus > 0.001) {
+        try {
+          const { resettleContactDebt } = await import("@/lib/debt-allocation.functions");
+          await resettleContactDebt({ data: { contact_id: supplierId, direction: "out" } });
+          await recomputePurchasePaymentStatus(args.purchase.id);
+        } catch (err) {
+          console.warn("resettleContactDebt (supplier) failed", err);
+        }
       }
       return { surplus };
     },

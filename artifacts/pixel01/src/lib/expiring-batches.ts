@@ -20,7 +20,7 @@ export type ExpiringBatchRow = {
 
 /** Aggregate remaining qty per (product, expiry) from movement tables. */
 export async function fetchExpiringBatches(): Promise<ExpiringBatchRow[]> {
-  const [pi, ii, di, sri, prods] = await Promise.all([
+  const [pi, ii, di, sri, exc, prods] = await Promise.all([
     (supabase.from("purchase_items") as any)
       .select("product_id, expiry_date, quantity, base_quantity")
       .not("expiry_date", "is", null)
@@ -34,7 +34,11 @@ export async function fetchExpiringBatches(): Promise<ExpiringBatchRow[]> {
       .not("expiry_date", "is", null)
       .not("product_id", "is", null),
     (supabase.from("standalone_return_items") as any)
-      .select("product_id, expiry_date, quantity, standalone_return:standalone_returns!inner(return_type)")
+      .select("product_id, expiry_date, quantity, base_quantity, standalone_return:standalone_returns!inner(return_type)")
+      .not("expiry_date", "is", null)
+      .not("product_id", "is", null),
+    (supabase.from as any)("item_exchange_items")
+      .select("product_id, expiry_date, quantity, base_quantity, direction")
       .not("expiry_date", "is", null)
       .not("product_id", "is", null),
     supabase.from("products").select(
@@ -69,11 +73,16 @@ export async function fetchExpiringBatches(): Promise<ExpiringBatchRow[]> {
     ensure(r.product_id, r.expiry_date).qty -= Number(r.base_quantity ?? r.quantity ?? 0);
   }
   for (const r of (sri.data as any[]) ?? []) {
-    const q = Number(r.quantity ?? 0);
+    const q = Number(r.base_quantity ?? r.quantity ?? 0);
     if (!q) continue;
     const rt = r.standalone_return?.return_type;
     if (rt === "sales") ensure(r.product_id, r.expiry_date).qty += q;
     else if (rt === "purchase") ensure(r.product_id, r.expiry_date).qty -= q;
+  }
+  for (const r of (exc.data as any[]) ?? []) {
+    const q = Number(r.base_quantity ?? r.quantity ?? 0);
+    if (!q) continue;
+    ensure(r.product_id, r.expiry_date).qty += r.direction === "incoming" ? q : -q;
   }
 
   return Array.from(map.values()).map((b) => {

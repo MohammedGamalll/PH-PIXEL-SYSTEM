@@ -468,7 +468,6 @@ export function CountForm({
     if (rows.length) {
       const payload = rows.map((r) => {
         const physBase = rowHasPhysicalInput(r) ? physBaseFromRow(r) : 0;
-        const variance = baseVarianceForRow(r);
         const costMain = r.cost_at_time;
         return {
           adjustment_id: id, owner_id: ownerId, product_id: r.product_id,
@@ -478,8 +477,6 @@ export function CountForm({
           system_qty: r.system_qty,
           physical_qty: physBase,
           cost_at_time: costMain,
-          variance_qty: rowHasPhysicalInput(r) ? variance : 0,
-          variance_value: rowHasPhysicalInput(r) ? varianceValueFromBase(variance, costMain, r.unit_tree) : 0,
         };
       });
       const { error: itemsErr } = await supabase.from("stock_adjustment_items" as any).insert(payload as any);
@@ -718,7 +715,7 @@ export function CountForm({
                 const variance = baseVarianceForRow(r);
                 const value = varianceValueFromBase(variance, r.cost_at_time, tree);
                 const hasInput = rowHasPhysicalInput(r);
-                const systemDisplay = r.is_new_batch ? "—" : formatMainQuantity(r.system_qty, tree);
+                const systemDisplay = r.is_new_batch ? "—" : formatBaseQuantity(r.system_qty, tree);
                 const varianceDisplay = !hasInput
                   ? "—"
                   : variance === 0 ? formatMainQuantity(0, tree) : (variance > 0 ? "+" : "-") + formatMainQuantity(Math.abs(variance), tree);

@@ -155,6 +155,9 @@ export function useCreateInvoice() {
       qc.invalidateQueries({ queryKey: ["contact-balances"] });
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["stock-alert"] });
+      qc.invalidateQueries({ queryKey: ["product-batches"] });
+      qc.invalidateQueries({ queryKey: ["item-card-bundle"] });
+      qc.invalidateQueries({ queryKey: ["product-card"] });
       toast.success("تم الحفظ");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -211,6 +214,9 @@ export function useUpdateInvoice() {
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["stock-alert"] });
       qc.invalidateQueries({ queryKey: ["product_warehouse_stock"] });
+      qc.invalidateQueries({ queryKey: ["product-batches"] });
+      qc.invalidateQueries({ queryKey: ["item-card-bundle"] });
+      qc.invalidateQueries({ queryKey: ["product-card"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
       qc.invalidateQueries({ queryKey: ["account-balances"] });
       qc.invalidateQueries({ queryKey: ["treasuries"] });
@@ -400,6 +406,20 @@ export function useConvertSaleToCredit() {
       if (fetchErr) throw fetchErr;
       if (!inv) throw new Error("الفاتورة غير موجودة");
       const oldPaid = Number(inv.paid_amount || 0);
+      const { data: allocations, error: allocErr } = await (supabase.from("contact_payment_invoice_allocations") as any)
+        .select("id, contact_payment_id, allocated_amount")
+        .eq("document_type", "invoice")
+        .eq("document_id", invoiceId);
+      if (allocErr) throw allocErr;
+      const allocationRows = (allocations ?? []) as any[];
+      const allocatedByPayment = new Map<string, number>();
+      for (const row of allocationRows) {
+        if (!row.contact_payment_id) continue;
+        allocatedByPayment.set(
+          row.contact_payment_id,
+          (allocatedByPayment.get(row.contact_payment_id) || 0) + Number(row.allocated_amount || 0),
+        );
+      }
 
       // Convert to a plain UNPAID invoice (غير مدفوعة) with the full value due.
       // We intentionally do NOT tag payment_method as "credit" so it is not
@@ -417,13 +437,40 @@ export function useConvertSaleToCredit() {
         .eq("id", invoiceId);
       if (error) throw error;
 
-      if (oldPaid > 0 && customerId) {
+      if (allocationRows.length > 0) {
+        const { error: delAllocErr } = await (supabase.from("contact_payment_invoice_allocations") as any)
+          .delete()
+          .in("id", allocationRows.map((a) => a.id));
+        if (delAllocErr) throw delAllocErr;
+      }
+
+      const paymentIds = Array.from(allocatedByPayment.keys());
+      if (paymentIds.length > 0) {
+        const { data: pays, error: paysErr } = await (supabase.from("contact_payments") as any)
+          .select("id, allocated_amount")
+          .in("id", paymentIds);
+        if (paysErr) throw paysErr;
+        await Promise.all(((pays ?? []) as any[]).map((p) => {
+          const nextAllocated = Math.max(0, Number(p.allocated_amount || 0) - Number(allocatedByPayment.get(p.id) || 0));
+          return (supabase.from("contact_payments") as any)
+            .update({ allocated_amount: nextAllocated })
+            .eq("id", p.id);
+        }));
+      }
+
+      await (supabase.from("treasury_transactions") as any)
+        .update({ reference: null })
+        .eq("reference", invoiceId);
+
+      const freedCredit = Array.from(allocatedByPayment.values()).reduce((s, v) => s + Number(v || 0), 0);
+      const legacyCredit = Math.max(0, oldPaid - freedCredit);
+      if (legacyCredit > 0.001 && customerId) {
         const { error: cpErr } = await (supabase.from("contact_payments") as any).insert({
           owner_id: requireOwnerId(ownerId),
           contact_id: customerId,
           contact_type: "customer",
           direction: "in",
-          amount: oldPaid,
+          amount: legacyCredit,
           allocated_amount: 0,
           payment_method: "account",
           ref_no: inv.invoice_number,
@@ -432,12 +479,6 @@ export function useConvertSaleToCredit() {
           created_by: user!.id,
         });
         if (cpErr) throw cpErr;
-        try {
-          const { resettleContactDebt } = await import("@/lib/debt-allocation.functions");
-          await resettleContactDebt({ data: { contact_id: customerId, direction: "in" } });
-        } catch {
-          /* non-fatal */
-        }
       }
     },
     onSuccess: () => {

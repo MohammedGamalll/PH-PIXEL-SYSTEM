@@ -18,7 +18,7 @@ export type ProductBatch = {
  * so all screens (count form, product card, details) show identical numbers.
  */
 export async function computeProductBatches(productId: string): Promise<ProductBatch[]> {
-  const [pi, ii, pri, di, btIn, btOut, sri] = await Promise.all([
+  const [pi, ii, pri, di, btIn, btOut, sri, exc] = await Promise.all([
     (supabase.from("purchase_items") as any)
       .select("expiry_date, base_quantity, quantity")
       .eq("product_id", productId),
@@ -40,7 +40,10 @@ export async function computeProductBatches(productId: string): Promise<ProductB
       .select("expiry_date, base_quantity, quantity")
       .eq("source_product_id", productId),
     (supabase.from("standalone_return_items") as any)
-      .select("expiry_date, quantity, product_id, standalone_return:standalone_returns!inner(return_type)")
+      .select("expiry_date, quantity, base_quantity, product_id, standalone_return:standalone_returns!inner(return_type)")
+      .eq("product_id", productId),
+    (supabase.from as any)("item_exchange_items")
+      .select("expiry_date, direction, quantity, base_quantity, product_id")
       .eq("product_id", productId),
   ]);
 
@@ -103,13 +106,27 @@ export async function computeProductBatches(productId: string): Promise<ProductB
 
   // Standalone returns: sales returns add stock; purchase returns reduce stock.
   ((sri.data as any[]) || []).forEach((r) => {
-    const q = Number(r.quantity ?? 0);
+    const q = Number(r.base_quantity ?? r.quantity ?? 0);
     if (!q) return;
     const rt = r.standalone_return?.return_type;
     if (rt === "sales") {
       const key = r.expiry_date || "";
       ensure(key).returned += q;
     } else if (rt === "purchase") {
+      if (r.expiry_date) ensure(r.expiry_date).sold += q;
+      else fifoSold += q;
+    }
+  });
+
+  // Item exchange movements: incoming adds supply; outgoing drains the chosen
+  // expiry batch (or FIFO when no expiry is stored).
+  ((exc.data as any[]) || []).forEach((r) => {
+    const q = Number(r.base_quantity ?? r.quantity ?? 0);
+    if (!q) return;
+    const key = r.expiry_date || "";
+    if (r.direction === "incoming") {
+      ensure(key).purchased += q;
+    } else if (r.direction === "outgoing") {
       if (r.expiry_date) ensure(r.expiry_date).sold += q;
       else fifoSold += q;
     }

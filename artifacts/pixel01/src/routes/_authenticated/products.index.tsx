@@ -77,9 +77,6 @@ function AllProductsPage() {
     { key: "soldUnits", label: t("products.col.sold_units"), visible: true },
     { key: "transferredUnits", label: t("products.col.transferred_units"), visible: false },
     { key: "damagedUnits", label: t("products.col.damaged_units"), visible: true },
-    { key: "custom1", label: t("products.col.custom1"), visible: true },
-    { key: "custom2", label: t("products.col.custom2"), visible: true },
-    { key: "custom3", label: t("products.col.custom3"), visible: true },
   ]);
   const [filters, setFilters] = useState<ProductFiltersState>(emptyFilters);
   const [detailsProduct, setDetailsProduct] = useState<any | null>(null);
@@ -284,7 +281,6 @@ function AllProductsPage() {
         return v > 0 ? formatBaseQuantity(v, p) : `0 ${baseUnitName(p)}`;
       }
       case "transferredUnits": return `0 ${baseUnitName(p)}`;
-      case "custom1": case "custom2": case "custom3": return "—";
       default: return "—";
     }
   };

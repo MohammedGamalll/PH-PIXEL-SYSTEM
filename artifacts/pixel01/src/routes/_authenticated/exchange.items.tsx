@@ -12,6 +12,7 @@ import { requireTreasuryAccountId } from "@/lib/treasury-account";
 import { baseUnitsPer, toBase, formatBaseQuantity, type UnitLevel, unitOptions } from "@/lib/units";
 import { priceForUnitLevel } from "@/lib/stock-display";
 import { normalizeArabicText } from "@/lib/arabic";
+import { computeProductBatches } from "@/lib/product-batches";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 export const Route = createFileRoute("/_authenticated/exchange/items")({
@@ -27,6 +28,7 @@ type ExchangeRow = {
   unit_level: UnitLevel;
   unit_price: number;
   discount_pct: number;
+  expiry_date: string;
 };
 
 function rowId() {
@@ -110,6 +112,7 @@ function ItemExchangePage() {
         unit_level: "main",
         unit_price: unitPriceForLevel(p, "main", dir),
         discount_pct: 0,
+        expiry_date: "",
       },
     ]);
   };
@@ -173,6 +176,25 @@ function ItemExchangePage() {
         toast.error(`الصنف "${p.name}" الكمية المطلوبة أكبر من المخزون`);
         return;
       }
+      if (p.has_expiry && !r.expiry_date) {
+        toast.error(`اختر دفعة الصلاحية للصنف "${p.name}"`);
+        return;
+      }
+      if (r.expiry_date) {
+        const batches = await computeProductBatches(r.product_id);
+        const batch = batches.find((b) => b.expiry_date === r.expiry_date);
+        if (!batch || requestedBase > Number(batch.remaining || 0)) {
+          toast.error(`كمية "${p.name}" أكبر من المتاح في دفعة ${r.expiry_date}`);
+          return;
+        }
+      }
+    }
+    for (const r of incomingRows) {
+      const p = byId.get(r.product_id);
+      if (p?.has_expiry && !r.expiry_date) {
+        toast.error(`أدخل تاريخ صلاحية للصنف الداخل "${p.name}"`);
+        return;
+      }
     }
 
     try {
@@ -198,6 +220,7 @@ function ItemExchangePage() {
             quantity: Number(r.quantity || 0),
             base_quantity: baseQty,
             unit_price: Number(r.unit_price || 0),
+            expiry_date: r.expiry_date || null,
             total: rowTotal(r),
           };
         });
@@ -209,7 +232,7 @@ function ItemExchangePage() {
 
       // 1) Persist the exchange as a durable inventory movement so it survives
       //    any future stock recalculation (and reflects in the Item Card).
-      const { data: header, error: headerErr } = await (supabase.from("item_exchanges") as any)
+      const { data: header, error: headerErr } = await (supabase.from as any)("item_exchanges")
         .insert({
           owner_id: ownerId,
           reference: exchangeRef,
@@ -225,7 +248,7 @@ function ItemExchangePage() {
         .single();
       if (headerErr) throw headerErr;
 
-      const { error: itemsErr } = await (supabase.from("item_exchange_items") as any).insert(
+      const { error: itemsErr } = await (supabase.from as any)("item_exchange_items").insert(
         itemsPayload.map((it) => ({
           exchange_id: header.id,
           product_id: it.product_id,
@@ -234,6 +257,7 @@ function ItemExchangePage() {
           quantity: it.quantity,
           base_quantity: it.base_quantity,
           unit_price: it.unit_price,
+          expiry_date: it.expiry_date,
           total: it.total,
         })),
       );
@@ -287,6 +311,8 @@ function ItemExchangePage() {
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["stock-alert"] });
       qc.invalidateQueries({ queryKey: ["product_warehouse_stock"] });
+      qc.invalidateQueries({ queryKey: ["product-batches"] });
+      qc.invalidateQueries({ queryKey: ["item-card-bundle"] });
       setIncomingRows([]);
       setOutgoingRows([]);
       setNotes("");
@@ -505,9 +531,10 @@ function Section({
             <div className="col-span-3">الصنف</div>
             <div className="col-span-2">الكمية</div>
             <div className="col-span-2">الوحدة</div>
-            <div className="col-span-2">سعر الوحدة</div>
+            <div className="col-span-2">{dir === "incoming" ? "تاريخ الصلاحية" : "دفعة الصلاحية"}</div>
+            <div className="col-span-1">سعر الوحدة</div>
             <div className="col-span-1">خصم %</div>
-            <div className="col-span-2">الإجمالي</div>
+            <div className="col-span-1">الإجمالي</div>
           </div>
           {rows.map((r) => {
             const p = byId.get(r.product_id);
@@ -536,12 +563,20 @@ function Section({
                   </select>
                 </div>
                 <div className="md:col-span-2">
+                  <ExpiryField
+                    dir={dir}
+                    product={p}
+                    value={r.expiry_date}
+                    onChange={(expiry_date) => onChange(r.key, { expiry_date })}
+                  />
+                </div>
+                <div className="md:col-span-1">
                   <input type="number" step="any" min={0} className="w-full border rounded h-10 px-2" value={r.unit_price} onChange={(e) => onChange(r.key, { unit_price: Number(e.target.value) || 0 })} />
                 </div>
                 <div className="md:col-span-1">
                   <input type="number" step="any" min={0} max={100} className="w-full border rounded h-10 px-2" value={r.discount_pct} onChange={(e) => onChange(r.key, { discount_pct: Number(e.target.value) || 0 })} />
                 </div>
-                <div className="md:col-span-2 flex items-center justify-between gap-2">
+                <div className="md:col-span-1 flex items-center justify-between gap-2">
                   <span className="font-semibold">{rowTotal(r).toFixed(2)}</span>
                   <button type="button" onClick={() => onRemove(r.key)} className="h-8 w-8 rounded border text-red-600 inline-flex items-center justify-center"><Trash2 className="h-4 w-4" /></button>
                 </div>
@@ -551,6 +586,56 @@ function Section({
         </div>
       )}
     </div>
+  );
+}
+
+function ExpiryField({
+  dir,
+  product,
+  value,
+  onChange,
+}: {
+  dir: Dir;
+  product: any;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const productId = product?.id as string | undefined;
+  const { data: batches = [] } = useQuery({
+    queryKey: ["product-batches", productId],
+    enabled: dir === "outgoing" && !!productId,
+    queryFn: () => computeProductBatches(productId!),
+  });
+
+  if (!product) {
+    return <div className="text-xs text-slate-400">—</div>;
+  }
+
+  if (dir === "incoming") {
+    return (
+      <input
+        type="date"
+        className="w-full border rounded h-10 px-2"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    );
+  }
+
+  const available = batches.filter((b) => Number(b.remaining || 0) > 0);
+  return (
+    <select
+      className="w-full border rounded h-10 px-2"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      <option value="">اختر الدفعة</option>
+      {available.map((b) => (
+        <option key={b.expiry_date || "__no_expiry__"} value={b.expiry_date || ""}>
+          {b.expiry_date || "بدون صلاحية"} - {formatBaseQuantity(b.remaining, product)}
+        </option>
+      ))}
+    </select>
   );
 }
 

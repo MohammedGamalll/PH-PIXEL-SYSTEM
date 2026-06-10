@@ -16,6 +16,7 @@ import { formatCurrency } from "@/lib/format";
 import { useSettings } from "@/contexts/SettingsContext";
 import { unitOptions, toBase, formatBaseQuantity, baseUnitsPer, type UnitLevel, type ProductUnitTree } from "@/lib/units";
 import { priceForUnitLevel } from "@/lib/stock-display";
+import { computeProductBatches } from "@/lib/product-batches";
 import { PHARMACY_UNITS } from "@/lib/pharmacy-units";
 import { DateInput } from "@/components/shared/DateInput";
 
@@ -27,6 +28,7 @@ type ProductRow = {
   price: number;
   cost: number;
   stock: number;
+  has_expiry?: boolean | null;
   main_unit: string | null;
   sub_unit_1: string | null;
   sub_unit_1_ratio: number | null;
@@ -86,7 +88,7 @@ function useProductSearch() {
     enabled: !!user,
     queryFn: async () => {
       const { data, error } = await (supabase.from("products") as any)
-        .select("id,name,name_en,sku,price,cost,stock,main_unit,sub_unit_1,sub_unit_1_ratio,sub_unit_2,sub_unit_2_ratio")
+        .select("id,name,name_en,sku,price,cost,stock,has_expiry,main_unit,sub_unit_1,sub_unit_1_ratio,sub_unit_2,sub_unit_2_ratio")
         .order("name")
         .limit(2000);
       if (error) throw error;
@@ -326,16 +328,33 @@ export function StandaloneReturnPage() {
           unit_price: Number(r.unit_price) || 0,
           discount: Number(r.discount) || 0,
           expiry_date: r.expiry_date || null,
+          _row: r,
         }));
       if (items.length === 0) throw new Error("أضف صنف واحد على الأقل بكمية صحيحة");
       if (!treasuryId) throw new Error("اختر الخزينة");
+      if (returnType === "purchase") {
+        for (const it of items) {
+          if (!it.product_id) continue;
+          const prod = products.find((p) => p.id === it.product_id);
+          if (prod?.has_expiry && !it.expiry_date) {
+            throw new Error(`اختر دفعة الصلاحية للصنف: ${prod.name}`);
+          }
+          if (it.expiry_date) {
+            const batches = await computeProductBatches(it.product_id);
+            const batch = batches.find((b) => b.expiry_date === it.expiry_date);
+            if (!batch || Number(it.base_quantity || 0) > Number(batch.remaining || 0)) {
+              throw new Error(`الكمية أكبر من المتاح في دفعة الصلاحية للصنف: ${prod?.name || it.product_id}`);
+            }
+          }
+        }
+      }
       return submitFn({
         data: {
           return_type: returnType,
           warehouse_id: null,
           treasury_id: treasuryId,
           reason: reason || null,
-          items,
+          items: items.map(({ _row, ...it }) => it),
           contact_id: partyMode === "cash" ? null : (contactId || null),
           contact_type: partyMode === "cash" ? null : partyMode,
           payment_method: paymentMethod,
@@ -353,6 +372,9 @@ export function StandaloneReturnPage() {
       qc.invalidateQueries({ queryKey: ["stock-alert"] });
       qc.invalidateQueries({ queryKey: ["products-for-standalone-return"] });
       qc.invalidateQueries({ queryKey: ["product_warehouse_stock"] });
+      qc.invalidateQueries({ queryKey: ["product-batches"] });
+      qc.invalidateQueries({ queryKey: ["item-card-bundle"] });
+      qc.invalidateQueries({ queryKey: ["product-card"] });
       qc.invalidateQueries({ queryKey: ["treasuries"] });
       qc.invalidateQueries({ queryKey: ["treasury_transactions"] });
       qc.invalidateQueries({ queryKey: ["accounts"] });
@@ -679,11 +701,20 @@ export function StandaloneReturnPage() {
                   </td>
                   {/* Expiry date */}
                   <td className="p-2">
-                    <DateInput
-                      value={r.expiry_date}
-                      onChange={(v) => updateRow(r.key, { expiry_date: v })}
-                      className="h-9 px-2 rounded-md text-sm w-full border bg-background outline-none"
-                    />
+                    {returnType === "purchase" && r.product_id ? (
+                      <StandaloneBatchSelect
+                        productId={r.product_id}
+                        product={r.product_units}
+                        value={r.expiry_date}
+                        onChange={(v) => updateRow(r.key, { expiry_date: v })}
+                      />
+                    ) : (
+                      <DateInput
+                        value={r.expiry_date}
+                        onChange={(v) => updateRow(r.key, { expiry_date: v })}
+                        className="h-9 px-2 rounded-md text-sm w-full border bg-background outline-none"
+                      />
+                    )}
                   </td>
                   {/* Row total */}
                   <td className="p-2 font-semibold" style={{ whiteSpace: "nowrap" }}>
@@ -780,5 +811,38 @@ export function StandaloneReturnPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function StandaloneBatchSelect({
+  productId,
+  product,
+  value,
+  onChange,
+}: {
+  productId: string;
+  product: ProductUnitTree | null;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const { data: batches = [] } = useQuery({
+    queryKey: ["product-batches", productId],
+    enabled: !!productId,
+    queryFn: () => computeProductBatches(productId),
+  });
+  const available = batches.filter((b) => Number(b.remaining || 0) > 0);
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="h-9 px-2 rounded-md text-sm w-full border bg-background outline-none"
+    >
+      <option value="">اختر الدفعة</option>
+      {available.map((b) => (
+        <option key={b.expiry_date || "__no_expiry__"} value={b.expiry_date || ""}>
+          {b.expiry_date || "بدون صلاحية"} - {product ? formatBaseQuantity(b.remaining, product) : b.remaining}
+        </option>
+      ))}
+    </select>
   );
 }

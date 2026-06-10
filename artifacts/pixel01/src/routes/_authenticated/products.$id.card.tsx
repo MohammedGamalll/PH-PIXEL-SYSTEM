@@ -177,7 +177,7 @@ function ItemCardPage() {
         (supabase.from("standalone_returns") as any).select(
           "id,reference_no,return_type,return_date,reason,created_at,created_by_name_snapshot",
         ),
-        (supabase.from("item_exchange_items") as any)
+        (supabase.from as any)("item_exchange_items")
           .select(
             "id,exchange_id,direction,quantity,base_quantity,unit_price,total,item_exchanges!inner(id,reference,exchange_date,notes,created_at)",
           )
