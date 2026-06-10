@@ -93,7 +93,7 @@ export function AccountsListPage() {
 
   const align = dir === "rtl" ? "right" : "left";
   const headStyle: React.CSSProperties = { backgroundColor: "#f9fafb", color: "#374151", padding: "8px 10px", fontWeight: 600, textAlign: align as any, fontSize: 12, borderBottom: "1px solid #d1d5db" };
-  const cellStyle: React.CSSProperties = { borderBottom: "1px solid #e5e7eb", padding: "6px 10px", color: "#374151", fontSize: 12 };
+  const cellStyle: React.CSSProperties = { borderBottom: "1px solid #e5e7eb", padding: "6px 10px", color: "#374151", fontSize: 12, whiteSpace: "nowrap" };
 
   // modals
   const [editing, setEditing] = useState<AccountWithBalance | null>(null);

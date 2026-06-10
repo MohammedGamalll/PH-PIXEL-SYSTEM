@@ -400,12 +400,16 @@ export function useConvertSaleToCredit() {
       customerId,
     }: { invoiceId: string; customerId: string }) => {
       const { data: inv, error: fetchErr } = await (supabase.from("invoices") as any)
-        .select("id, invoice_number, paid_amount, total, payment_method")
+        .select("id, invoice_number, paid_amount, total, payment_method, payment_account_id")
         .eq("id", invoiceId)
         .maybeSingle();
       if (fetchErr) throw fetchErr;
       if (!inv) throw new Error("الفاتورة غير موجودة");
       const oldPaid = Number(inv.paid_amount || 0);
+      const { data: existingTxs, error: txFetchErr } = await (supabase.from("treasury_transactions") as any)
+        .select("id, treasury_id, amount, type, is_reversal, reversed_amount, reversed_by_transaction_id")
+        .eq("reference", invoiceId);
+      if (txFetchErr) throw txFetchErr;
       const { data: allocations, error: allocErr } = await (supabase.from("contact_payment_invoice_allocations") as any)
         .select("id, contact_payment_id, allocated_amount")
         .eq("document_type", "invoice")
@@ -458,9 +462,59 @@ export function useConvertSaleToCredit() {
         }));
       }
 
-      await (supabase.from("treasury_transactions") as any)
-        .update({ reference: null })
-        .eq("reference", invoiceId);
+      if (oldPaid > 0.001) {
+        const txRows = ((existingTxs ?? []) as any[])
+          .filter((tx) => !tx.is_reversal && !tx.reversed_by_transaction_id && Number(tx.amount || 0) > Number(tx.reversed_amount || 0));
+        let remainingToReverse = oldPaid;
+        for (const tx of txRows) {
+          if (remainingToReverse <= 0.001) break;
+          const available = Math.max(0, Number(tx.amount || 0) - Number(tx.reversed_amount || 0));
+          const amount = Math.min(available, remainingToReverse);
+          if (amount <= 0.001 || !tx.treasury_id) continue;
+          const { data: rev, error: revErr } = await (supabase.from("treasury_transactions") as any)
+            .insert({
+              owner_id: requireOwnerId(ownerId),
+              treasury_id: tx.treasury_id,
+              amount,
+              type: "out",
+              description: `رد نقدية عند تحويل الفاتورة ${inv.invoice_number} إلى آجل`,
+              reference: invoiceId,
+              transaction_date: new Date().toISOString().slice(0, 10),
+              is_reversal: true,
+              original_transaction_id: tx.id,
+            })
+            .select("id")
+            .single();
+          if (revErr) throw revErr;
+          await (supabase.from("treasury_transactions") as any)
+            .update({
+              reversed_amount: Number(tx.reversed_amount || 0) + amount,
+              reversed_by_transaction_id: rev?.id ?? null,
+            })
+            .eq("id", tx.id);
+          remainingToReverse -= amount;
+        }
+
+        if (remainingToReverse > 0.001 && inv.payment_account_id) {
+          const { data: tr } = await (supabase.from("treasuries") as any)
+            .select("id")
+            .eq("account_id", inv.payment_account_id)
+            .maybeSingle();
+          if (tr?.id) {
+            const { error: fallbackRevErr } = await (supabase.from("treasury_transactions") as any).insert({
+              owner_id: requireOwnerId(ownerId),
+              treasury_id: tr.id,
+              amount: remainingToReverse,
+              type: "out",
+              description: `رد نقدية عند تحويل الفاتورة ${inv.invoice_number} إلى آجل`,
+              reference: invoiceId,
+              transaction_date: new Date().toISOString().slice(0, 10),
+              is_reversal: true,
+            });
+            if (fallbackRevErr) throw fallbackRevErr;
+          }
+        }
+      }
 
       const freedCredit = Array.from(allocatedByPayment.values()).reduce((s, v) => s + Number(v || 0), 0);
       const legacyCredit = Math.max(0, oldPaid - freedCredit);

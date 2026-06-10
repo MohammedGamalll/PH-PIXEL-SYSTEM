@@ -526,8 +526,9 @@ function Section({
       {rows.length === 0 ? (
         <div className="text-sm text-slate-500">لا توجد أصناف بعد — استخدم البحث بالأعلى لإضافة صنف</div>
       ) : (
-        <div className="space-y-2">
-          <div className="hidden md:grid grid-cols-12 gap-2 text-xs text-slate-500 px-1">
+        <div className="overflow-x-auto pb-1">
+          <div className="min-w-[980px] space-y-2">
+          <div className="grid grid-cols-12 gap-2 text-xs text-slate-500 px-1 whitespace-nowrap">
             <div className="col-span-3">الصنف</div>
             <div className="col-span-2">الكمية</div>
             <div className="col-span-2">الوحدة</div>
@@ -546,23 +547,23 @@ function Section({
             ].filter(Boolean).join(" ‹ ");
             const available = Number(p?.stock || 0);
             return (
-              <div key={r.key} className="grid grid-cols-1 md:grid-cols-12 gap-2 border rounded p-2 items-center">
-                <div className="md:col-span-3">
-                  <div className="font-semibold text-sm">{p?.name || "—"}</div>
-                  <div className="text-[11px] text-slate-500">
+              <div key={r.key} className="grid grid-cols-12 gap-2 border rounded p-2 items-center whitespace-nowrap">
+                <div className="col-span-3 min-w-0">
+                  <div className="font-semibold text-sm overflow-hidden text-ellipsis">{p?.name || "—"}</div>
+                  <div className="text-[11px] text-slate-500 overflow-hidden text-ellipsis">
                     شجرة الوحدات: {unitTree || "وحدة واحدة"}
                     {dir === "outgoing" && p && <> · متاح: {formatBaseQuantity(available, p)}</>}
                   </div>
                 </div>
-                <div className="md:col-span-2">
+                <div className="col-span-2">
                   <input type="number" step="any" min={0} className="w-full border rounded h-10 px-2" value={r.quantity} onChange={(e) => onChange(r.key, { quantity: Number(e.target.value) || 0 })} />
                 </div>
-                <div className="md:col-span-2">
+                <div className="col-span-2">
                   <select className="w-full border rounded h-10 px-2" value={r.unit_level} onChange={(e) => onChange(r.key, { unit_level: e.target.value as UnitLevel })}>
                     {opts.length === 0 ? <option value="main">وحدة</option> : opts.map((u) => <option key={u.level} value={u.level}>{u.name}</option>)}
                   </select>
                 </div>
-                <div className="md:col-span-2">
+                <div className="col-span-2">
                   <ExpiryField
                     dir={dir}
                     product={p}
@@ -570,19 +571,20 @@ function Section({
                     onChange={(expiry_date) => onChange(r.key, { expiry_date })}
                   />
                 </div>
-                <div className="md:col-span-1">
+                <div className="col-span-1">
                   <input type="number" step="any" min={0} className="w-full border rounded h-10 px-2" value={r.unit_price} onChange={(e) => onChange(r.key, { unit_price: Number(e.target.value) || 0 })} />
                 </div>
-                <div className="md:col-span-1">
+                <div className="col-span-1">
                   <input type="number" step="any" min={0} max={100} className="w-full border rounded h-10 px-2" value={r.discount_pct} onChange={(e) => onChange(r.key, { discount_pct: Number(e.target.value) || 0 })} />
                 </div>
-                <div className="md:col-span-1 flex items-center justify-between gap-2">
+                <div className="col-span-1 flex items-center justify-between gap-2">
                   <span className="font-semibold">{rowTotal(r).toFixed(2)}</span>
                   <button type="button" onClick={() => onRemove(r.key)} className="h-8 w-8 rounded border text-red-600 inline-flex items-center justify-center"><Trash2 className="h-4 w-4" /></button>
                 </div>
               </div>
             );
           })}
+          </div>
         </div>
       )}
     </div>

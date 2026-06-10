@@ -288,30 +288,41 @@ export function CountForm({
 
   /** Expand a product into per-batch rows when it has expiry; one row otherwise. */
   const addProductWithBatches = async (p: any) => {
-    if (rows.some((r) => !r.is_new_batch && r.product_id === p.id)) {
-      toast.info(isAr ? "الصنف مضاف بالفعل" : "Already added");
-      return;
-    }
     const hasExpiry = !!p.has_expiry;
     if (hasExpiry) {
       try {
         const batches = await loadBatchesForProduct(p.id);
         if (batches.length > 0) {
-          const newRows = batches.map((b) =>
-            makeRow({
-              product: p,
-              expiry_date: b.expiry_date,
-              original_expiry_date: b.expiry_date,
-              system_qty: b.remaining,
-              expiry_locked: !!b.expiry_date, // no-expiry batch stays editable
-            }),
+          const existingBatchKeys = new Set(
+            rows
+              .filter((r) => !r.is_new_batch && r.product_id === p.id)
+              .map((r) => r.expiry_date || ""),
           );
+          const newRows = batches
+            .filter((b) => !existingBatchKeys.has(b.expiry_date || ""))
+            .map((b) =>
+              makeRow({
+                product: p,
+                expiry_date: b.expiry_date,
+                original_expiry_date: b.expiry_date,
+                system_qty: b.remaining,
+                expiry_locked: !!b.expiry_date, // no-expiry batch stays editable
+              }),
+            );
+          if (newRows.length === 0) {
+            toast.info(isAr ? "كل دفعات الصنف مضافة بالفعل" : "All batches already added");
+            return;
+          }
           setRows((prev) => [...prev, ...newRows]);
           return;
         }
       } catch (e: any) {
         toast.error(e.message || "batch load failed");
       }
+    }
+    if (rows.some((r) => !r.is_new_batch && r.product_id === p.id && !r.expiry_date)) {
+      toast.info(isAr ? "الصنف مضاف بالفعل" : "Already added");
+      return;
     }
     setRows((prev) => [...prev, makeRow({ product: p, system_qty: Number(p.stock || 0), expiry_date: p.expiry_date || "" })]);
   };
@@ -339,23 +350,26 @@ export function CountForm({
       return data as any[];
     },
     onSuccess: async (products) => {
-      const existingIds = new Set(rows.filter((r) => !r.is_new_batch).map((r) => r.product_id));
-      const fresh = products.filter((p) => !existingIds.has(p.id));
+      const existingBatchKeys = new Set(rows.filter((r) => !r.is_new_batch).map((r) => `${r.product_id}|${r.expiry_date || ""}`));
+      const existingPlainIds = new Set(rows.filter((r) => !r.is_new_batch && !r.expiry_date).map((r) => r.product_id));
+      const fresh = products.filter((p) => p.has_expiry || !existingPlainIds.has(p.id));
       const additions: Row[] = [];
       for (const p of fresh) {
         if (p.has_expiry) {
           try {
             const batches = await loadBatchesForProduct(p.id);
             if (batches.length > 0) {
-              batches.forEach((b) =>
-                additions.push(makeRow({
-                  product: p,
-                  expiry_date: b.expiry_date,
-                  original_expiry_date: b.expiry_date,
-                  system_qty: b.remaining,
-                  expiry_locked: !!b.expiry_date,
-                })),
-              );
+              batches
+                .filter((b) => !existingBatchKeys.has(`${p.id}|${b.expiry_date || ""}`))
+                .forEach((b) =>
+                  additions.push(makeRow({
+                    product: p,
+                    expiry_date: b.expiry_date,
+                    original_expiry_date: b.expiry_date,
+                    system_qty: b.remaining,
+                    expiry_locked: !!b.expiry_date,
+                  })),
+                );
               continue;
             }
           } catch { /* fall through */ }

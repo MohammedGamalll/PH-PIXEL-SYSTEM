@@ -276,7 +276,7 @@ export function PurchaseItemsTable({
                   style={{ backgroundColor: idx === highlightIdx ? "#eff6ff" : "transparent" }}
                 >
                   <div style={{ color: "#111827", fontWeight: 600 }}>{p.name}{p.name_en ? ` — ${p.name_en}` : ""}</div>
-                  <div className="text-xs" style={{ color: "#6b7280" }}>
+                  <div className="text-xs" style={{ color: "#6b7280", whiteSpace: "nowrap" }}>
                     {p.sku || "—"} • {formatBaseQuantity(Number(p.stock ?? 0), p)} • {t("purchases.items.purchase_short", { amount: Number(p.cost ?? 0).toFixed(2) })}
                   </div>
                 </button>

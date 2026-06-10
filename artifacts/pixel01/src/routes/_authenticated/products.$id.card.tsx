@@ -179,7 +179,7 @@ function ItemCardPage() {
         ),
         (supabase.from as any)("item_exchange_items")
           .select(
-            "id,exchange_id,direction,quantity,base_quantity,unit_price,total,item_exchanges!inner(id,reference,exchange_date,notes,created_at)",
+            "id,exchange_id,direction,quantity,base_quantity,unit_price,total,expiry_date,item_exchanges!inner(id,reference,exchange_date,notes,created_at)",
           )
           .eq("product_id", id),
       ]);
@@ -480,7 +480,7 @@ function ItemCardPage() {
         qty: baseQty,
         qtyLabel: formatBaseQuantity(baseQty, product as any),
         delta: isIncoming ? +baseQty : -baseQty,
-        expiry: "—",
+        expiry: expiryCell(it.expiry_date),
         _sort: h.created_at ?? h.exchange_date ?? "",
       });
     }

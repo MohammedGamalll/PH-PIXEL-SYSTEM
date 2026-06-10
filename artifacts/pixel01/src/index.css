@@ -2,6 +2,11 @@
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
 
+table th,
+table td {
+  white-space: nowrap;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

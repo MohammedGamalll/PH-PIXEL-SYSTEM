@@ -553,7 +553,11 @@ export function usePurchasePayments(purchaseId?: string) {
     queryKey: ["purchase_payments", purchaseId],
     enabled: !!user && !!purchaseId,
     queryFn: async () => {
-      const [txRes, allocRes] = await Promise.all([
+      const [purchaseRes, txRes, allocRes] = await Promise.all([
+        (supabase.from("purchases") as any)
+          .select("id,purchase_number,ref_no,supplier_id")
+          .eq("id", purchaseId)
+          .maybeSingle(),
         (supabase.from("treasury_transactions") as any)
           .select("*")
           .eq("reference", purchaseId)
@@ -563,19 +567,57 @@ export function usePurchasePayments(purchaseId?: string) {
           .eq("document_type", "purchase")
           .eq("document_id", purchaseId),
       ]);
+      if (purchaseRes.error) throw purchaseRes.error;
       if (txRes.error) throw txRes.error;
+      if (allocRes.error) throw allocRes.error;
 
+      const purchase = purchaseRes.data as any;
       const txRows = (txRes.data ?? []) as any[];
       const allocRows = (allocRes.data ?? []) as any[];
       const cpFromAlloc = allocRows.map((a) => ({
         ...(a.contact_payments ?? {}),
         source: "contact_payment",
         allocated_amount: a.allocated_amount,
+        amount: Number(a.allocated_amount ?? a.contact_payments?.amount ?? 0),
+        description: a.contact_payments?.notes ?? a.contact_payments?.ref_no ?? "دفعة مورد",
       }));
 
+      const keys = [purchase?.purchase_number, purchase?.ref_no, purchaseId].filter(Boolean).map((v) => String(v));
+      let linkedContactPayments: any[] = [];
+      if (purchase?.supplier_id && keys.length > 0) {
+        const { data: payRows, error: payErr } = await (supabase.from("contact_payments") as any)
+          .select("*")
+          .eq("contact_type", "supplier")
+          .eq("contact_id", purchase.supplier_id)
+          .order("created_at", { ascending: false })
+          .limit(500);
+        if (payErr) throw payErr;
+        const allocatedIds = new Set(cpFromAlloc.map((p: any) => p.id).filter(Boolean));
+        linkedContactPayments = ((payRows ?? []) as any[])
+          .filter((p) => !allocatedIds.has(p.id))
+          .filter((p) => {
+            const hay = `${p.ref_no || ""} ${p.notes || ""}`;
+            return keys.some((k) => k && hay.includes(k));
+          })
+          .map((p) => ({
+            ...p,
+            source: "contact_payment" as const,
+            description: p.notes ?? p.ref_no ?? "دفعة مورد",
+          }));
+      }
+
+      const contactRows = [...cpFromAlloc, ...linkedContactPayments];
+      const hasContactNear = (tx: any) => contactRows.some((p: any) => {
+        const pAmount = Number(p.amount ?? p.allocated_amount ?? 0);
+        const txAmount = Number(tx.amount || 0);
+        const pTime = new Date(p.created_at || p.payment_date || 0).getTime();
+        const txTime = new Date(tx.created_at || tx.transaction_date || 0).getTime();
+        return Math.abs(pAmount - txAmount) < 0.01 && Math.abs(pTime - txTime) < 10 * 60 * 1000;
+      });
+
       const merged = [
-        ...txRows.map((t) => ({ ...t, source: "treasury" as const })),
-        ...cpFromAlloc,
+        ...contactRows,
+        ...txRows.filter((t) => !hasContactNear(t)).map((t) => ({ ...t, source: "treasury" as const })),
       ];
       merged.sort((a, b) => String(b.created_at || b.payment_date || b.transaction_date).localeCompare(String(a.created_at || a.payment_date || a.transaction_date)));
       return merged;
