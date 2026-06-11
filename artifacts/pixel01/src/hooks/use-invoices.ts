@@ -493,45 +493,15 @@ export function useConvertSaleToCredit() {
             .eq("id", tx.id);
           remainingToReverse -= amount;
         }
-
-        // Whatever cash could not be matched to a referenced transaction is
-        // removed from the invoice's payment treasury, falling back to the
-        // owner's main treasury, so the paid cash always leaves a treasury.
-        if (remainingToReverse > 0.001) {
-          let fallbackTreasuryId: string | null = null;
-          if (inv.payment_account_id) {
-            const { data: tr } = await (supabase.from("treasuries") as any)
-              .select("id")
-              .eq("account_id", inv.payment_account_id)
-              .maybeSingle();
-            fallbackTreasuryId = tr?.id ?? null;
-          }
-          if (!fallbackTreasuryId) {
-            const { data: mainTr } = await (supabase as any).rpc("ensure_main_treasury", {
-              _owner: requireOwnerId(ownerId),
-            });
-            fallbackTreasuryId = (mainTr as string | null) ?? null;
-          }
-          if (fallbackTreasuryId) {
-            const { error: fallbackRevErr } = await (supabase.from("treasury_transactions") as any).insert({
-              owner_id: requireOwnerId(ownerId),
-              treasury_id: fallbackTreasuryId,
-              amount: remainingToReverse,
-              type: "out",
-              description: `رد نقدية عند تحويل الفاتورة ${inv.invoice_number} إلى آجل`,
-              reference: invoiceId,
-              transaction_date: new Date().toISOString().slice(0, 10),
-              is_reversal: true,
-            });
-            if (fallbackRevErr) throw fallbackRevErr;
-          }
-        }
       }
 
-      // The invoice is now fully unpaid, so the customer owes the entire
-      // amount (the trg_sync_invoice_payment_delta trigger debits AR). We do
-      // NOT create a customer credit — the previously-paid cash becomes due
-      // on the customer and is removed from the treasury above.
+      // Setting paid_amount to 0 makes the customer owe the entire amount and
+      // fires trg_sync_invoice_payment_delta, which debits accounts receivable
+      // and credits the cash account — so the treasury balance drops by the
+      // previously-paid cash. We only reverse standalone treasury_transactions
+      // that actually reference this invoice (above); we do NOT fabricate a
+      // withdrawal for POS cash sales (they have no treasury_transaction), and
+      // we do NOT create a customer credit that would cancel the amount due.
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["invoices"] });
