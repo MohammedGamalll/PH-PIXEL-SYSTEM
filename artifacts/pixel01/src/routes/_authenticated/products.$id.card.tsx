@@ -156,7 +156,7 @@ function ItemCardPage() {
         ),
         (supabase.from("purchase_return_items") as any)
           .select(
-            "id,purchase_return_id,quantity,base_quantity,unit_name,unit_price,total,purchase_returns!inner(id,ref_no,return_date,purchase_id,created_at)",
+            "id,purchase_return_id,quantity,base_quantity,unit_name,unit_price,total",
           )
           .eq("product_id", id),
         (supabase.from("inventory_branch_transfer_items") as any)
@@ -359,10 +359,13 @@ function ItemCardPage() {
       });
     }
 
-    // Purchase returns: use the actual return line items so the returned
-    // quantity and the stock change show instead of "—".
+    // Purchase returns: resolve the header from the separately-fetched
+    // purchase_returns list (no PostgREST embed, which would fail without a FK).
+    const prHdrMap = new Map<string, any>(
+      ((bundle as any).pReturns || []).map((h: any) => [h.id, h]),
+    );
     for (const it of (bundle as any).prItems as any[]) {
-      const h = it.purchase_returns ?? {};
+      const h = prHdrMap.get(it.purchase_return_id) ?? {};
       const baseQty = Number(it.base_quantity ?? it.quantity ?? 0);
       const p = h.purchase_id ? purchMap.get(h.purchase_id) : null;
       purchaseReturnCount += 1;

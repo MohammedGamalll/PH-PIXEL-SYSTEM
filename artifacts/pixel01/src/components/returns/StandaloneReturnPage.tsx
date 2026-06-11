@@ -347,6 +347,17 @@ export function StandaloneReturnPage() {
             }
           }
         }
+      } else {
+        // Sales returns add stock back: require an expiry date for tracked
+        // products so the returned quantity lands on a specific batch
+        // (existing or newly created) instead of the earliest batch.
+        for (const it of items) {
+          if (!it.product_id) continue;
+          const prod = products.find((p) => p.id === it.product_id);
+          if (prod?.has_expiry && !it.expiry_date) {
+            throw new Error(`أدخل تاريخ صلاحية للصنف: ${prod.name}`);
+          }
+        }
       }
       return submitFn({
         data: {

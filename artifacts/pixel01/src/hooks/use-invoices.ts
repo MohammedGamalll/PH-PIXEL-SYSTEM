@@ -391,7 +391,6 @@ export function useConvertInvoice() {
  * - Stock is untouched (the sale itself still stands).
  */
 export function useConvertSaleToCredit() {
-  const { user } = useAuth();
   const ownerId = useOwnerId();
   const qc = useQueryClient();
   return useMutation({
@@ -495,15 +494,28 @@ export function useConvertSaleToCredit() {
           remainingToReverse -= amount;
         }
 
-        if (remainingToReverse > 0.001 && inv.payment_account_id) {
-          const { data: tr } = await (supabase.from("treasuries") as any)
-            .select("id")
-            .eq("account_id", inv.payment_account_id)
-            .maybeSingle();
-          if (tr?.id) {
+        // Whatever cash could not be matched to a referenced transaction is
+        // removed from the invoice's payment treasury, falling back to the
+        // owner's main treasury, so the paid cash always leaves a treasury.
+        if (remainingToReverse > 0.001) {
+          let fallbackTreasuryId: string | null = null;
+          if (inv.payment_account_id) {
+            const { data: tr } = await (supabase.from("treasuries") as any)
+              .select("id")
+              .eq("account_id", inv.payment_account_id)
+              .maybeSingle();
+            fallbackTreasuryId = tr?.id ?? null;
+          }
+          if (!fallbackTreasuryId) {
+            const { data: mainTr } = await (supabase as any).rpc("ensure_main_treasury", {
+              _owner: requireOwnerId(ownerId),
+            });
+            fallbackTreasuryId = (mainTr as string | null) ?? null;
+          }
+          if (fallbackTreasuryId) {
             const { error: fallbackRevErr } = await (supabase.from("treasury_transactions") as any).insert({
               owner_id: requireOwnerId(ownerId),
-              treasury_id: tr.id,
+              treasury_id: fallbackTreasuryId,
               amount: remainingToReverse,
               type: "out",
               description: `رد نقدية عند تحويل الفاتورة ${inv.invoice_number} إلى آجل`,
@@ -516,24 +528,10 @@ export function useConvertSaleToCredit() {
         }
       }
 
-      const freedCredit = Array.from(allocatedByPayment.values()).reduce((s, v) => s + Number(v || 0), 0);
-      const legacyCredit = Math.max(0, oldPaid - freedCredit);
-      if (legacyCredit > 0.001 && customerId) {
-        const { error: cpErr } = await (supabase.from("contact_payments") as any).insert({
-          owner_id: requireOwnerId(ownerId),
-          contact_id: customerId,
-          contact_type: "customer",
-          direction: "in",
-          amount: legacyCredit,
-          allocated_amount: 0,
-          payment_method: "account",
-          ref_no: inv.invoice_number,
-          notes: `رصيد من مدفوعات سابقة — تحويل الفاتورة ${inv.invoice_number} إلى آجل`,
-          payment_date: new Date().toISOString().slice(0, 10),
-          created_by: user!.id,
-        });
-        if (cpErr) throw cpErr;
-      }
+      // The invoice is now fully unpaid, so the customer owes the entire
+      // amount (the trg_sync_invoice_payment_delta trigger debits AR). We do
+      // NOT create a customer credit — the previously-paid cash becomes due
+      // on the customer and is removed from the treasury above.
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["invoices"] });
@@ -541,6 +539,9 @@ export function useConvertSaleToCredit() {
       qc.invalidateQueries({ queryKey: ["contact-balances"] });
       qc.invalidateQueries({ queryKey: ["accounts"] });
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
+      qc.invalidateQueries({ queryKey: ["treasuries"] });
+      qc.invalidateQueries({ queryKey: ["treasury_transactions"] });
+      qc.invalidateQueries({ queryKey: ["treasury-accounts-dashboard"] });
       toast.success("تم التحويل إلى آجل");
     },
     onError: (e: Error) => toast.error(e.message),
