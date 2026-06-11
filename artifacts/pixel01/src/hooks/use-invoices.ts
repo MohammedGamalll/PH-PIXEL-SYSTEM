@@ -502,6 +502,23 @@ export function useConvertSaleToCredit() {
       // that actually reference this invoice (above); we do NOT fabricate a
       // withdrawal for POS cash sales (they have no treasury_transaction), and
       // we do NOT create a customer credit that would cancel the amount due.
+      //
+      // Relabel the ledger entry the trigger just created so it reads as a
+      // deferred conversion instead of a generic invoice payment.
+      if (oldPaid > 0.001) {
+        const { data: je } = await (supabase.from("journal_entries") as any)
+          .select("id")
+          .eq("source_id", invoiceId)
+          .eq("source_type", "sale_payment")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (je?.id) {
+          await (supabase.from("journal_entries") as any)
+            .update({ description: `تحويل الفاتورة ${inv.invoice_number} إلى آجل` })
+            .eq("id", je.id);
+        }
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["invoices"] });
