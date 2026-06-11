@@ -421,8 +421,12 @@ function AccountTab({ contact, scope, totalDue, gross }: { contact: any; scope: 
     }
     for (const p of payments as any[]) {
       if (!inRange(p.created_at ?? p.payment_date)) continue;
-      const amt = Number(p.amount ?? 0);
-      if (p.is_reversal) totalPaid -= amt; else totalPaid += amt;
+      // Reversals are reflected via `reversed_amount` on the original row, so
+      // skip explicit reversal rows and count each payment net of what was
+      // reversed (e.g. when an invoice is converted back to آجل).
+      if (p.is_reversal) continue;
+      const amt = Math.max(0, Math.abs(Number(p.amount ?? 0)) - Math.abs(Number(p.reversed_amount ?? 0)));
+      totalPaid += amt;
     }
     return { openingBal, totalSales, totalPurchases, totalReturns, totalPaid };
   }, [contact, invoices, purchases, payments, from, to, scope]);
@@ -465,26 +469,21 @@ function AccountTab({ contact, scope, totalDue, gross }: { contact: any; scope: 
     }
     for (const p of payments as any[]) {
       if (!inRange(p.created_at ?? p.payment_date)) continue;
-      const amt = Math.abs(Number(p.amount ?? 0));
-      const isRev = !!p.is_reversal;
-      const origRef = p.original_ref_no || p.ref_no || "";
+      // Reversals are accounted for through `reversed_amount` on the original
+      // row, so skip standalone reversal rows to avoid double-counting.
+      if (p.is_reversal) continue;
+      const amt = Math.max(0, Math.abs(Number(p.amount ?? 0)) - Math.abs(Number(p.reversed_amount ?? 0)));
+      if (amt <= 0.0001) continue;
       let label = "";
       if (p.payment_method === "discount") {
         label = scope === "customer" ? "خصم مسموح به" : "خصم مكتسب";
-        if (isRev) label = `عكس ${label}`;
       } else {
-        label = isRev ? (origRef ? `عكس دفعة ${origRef}` : "عكس دفعة") : "دفعة";
+        label = "دفعة";
       }
       // Payment direction: "in" = received from contact → CREDIT (reduces their debt)
       // Payment direction: "out" = paid to contact → DEBIT (reduces our debt)
-      // Reversal flips the direction
       let debit = 0, credit = 0;
-      if (isRev) {
-        // Reversal undoes the original payment
-        if (p.direction === "in") debit = amt; else credit = amt;
-      } else {
-        if (p.direction === "in") credit = amt; else debit = amt;
-      }
+      if (p.direction === "in") credit = amt; else debit = amt;
       all.push({ date: formatDateTime(p.created_at ?? p.payment_date), sortKey: p.created_at ?? p.payment_date, ref: p.ref_no ?? "-", type: label, debit, credit });
     }
     all.sort((a, b) => (a.sortKey < b.sortKey ? -1 : 1));
@@ -535,20 +534,18 @@ function AccountTab({ contact, scope, totalDue, gross }: { contact: any; scope: 
     for (const p of sys.payments) {
       if (p.contact_id !== contact.id) continue;
       if (!inRange(p.created_at ?? p.payment_date)) continue;
-      const amt = Math.abs(Number(p.amount ?? 0));
-      const isRev = !!p.is_reversal;
-      let typeLabel = isRev ? "عكس دفعة" : "دفعة";
+      // Reversals are reflected via `reversed_amount`; skip standalone reversal
+      // rows and count each payment net of what was reversed.
+      if (p.is_reversal) continue;
+      const amt = Math.max(0, Math.abs(Number(p.amount ?? 0)) - Math.abs(Number(p.reversed_amount ?? 0)));
+      if (amt <= 0.0001) continue;
+      let typeLabel = "دفعة";
       if (p.payment_method === "discount") {
         typeLabel = scope === "customer" ? "خصم مسموح به" : "خصم مكتسب";
-        if (isRev) typeLabel = `عكس ${typeLabel}`;
       }
       // "in" = received from contact → CREDIT; "out" = paid to contact → DEBIT
       let debit = 0, credit = 0;
-      if (isRev) {
-        if (p.direction === "in") debit = amt; else credit = amt;
-      } else {
-        if (p.direction === "in") credit = amt; else debit = amt;
-      }
+      if (p.direction === "in") credit = amt; else debit = amt;
       all.push({ date: formatDateTime(p.created_at ?? p.payment_date), sortKey: p.created_at ?? p.payment_date, ref: p.ref_no ?? "-", type: typeLabel, pay_status: "مدفوع", pay_method: p.payment_method ?? "نقدا", debit, credit });
     }
 

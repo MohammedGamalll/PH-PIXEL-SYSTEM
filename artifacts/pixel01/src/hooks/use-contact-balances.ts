@@ -133,13 +133,23 @@ export function useContactBalances() {
       // 4. Contact Payments (standalone payments, NOT invoice paid_amount)
       const pays = await fetchAll((from, to) =>
         supabase.from("contact_payments")
-          .select("contact_id,amount,direction,is_reversal")
+          .select("contact_id,amount,direction,is_reversal,reversed_amount")
           .range(from, to),
       );
       for (const p of pays as any[]) {
         if (!p.contact_id) continue;
+        // Skip explicit reversal rows; a reversed payment is reflected through
+        // its own `reversed_amount` on the original row (subtracted below) so we
+        // never count the reversal twice.
         if (p.is_reversal) continue;
-        const amount = Math.abs(Number(p.amount ?? 0));
+        // Effective amount = what still applies after any reversal. When an
+        // invoice is converted back to آجل, the portion of this payment that
+        // funded it is marked reversed, so it stops reducing the customer's
+        // due (the money is returned to the customer's account).
+        const amount = Math.max(
+          0,
+          Math.abs(Number(p.amount ?? 0)) - Math.abs(Number(p.reversed_amount ?? 0)),
+        );
         const v = get(p.contact_id);
         if (p.direction === "in") {
           v.payments_in += amount;

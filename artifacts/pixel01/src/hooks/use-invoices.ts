@@ -450,13 +450,24 @@ export function useConvertSaleToCredit() {
       const paymentIds = Array.from(allocatedByPayment.keys());
       if (paymentIds.length > 0) {
         const { data: pays, error: paysErr } = await (supabase.from("contact_payments") as any)
-          .select("id, allocated_amount")
+          .select("id, amount, allocated_amount, reversed_amount")
           .in("id", paymentIds);
         if (paysErr) throw paysErr;
         await Promise.all(((pays ?? []) as any[]).map((p) => {
-          const nextAllocated = Math.max(0, Number(p.allocated_amount || 0) - Number(allocatedByPayment.get(p.id) || 0));
+          const portion = Number(allocatedByPayment.get(p.id) || 0);
+          const nextAllocated = Math.max(0, Number(p.allocated_amount || 0) - portion);
+          // Mark the portion of this collection that funded the invoice as
+          // reversed. The contact-balance model subtracts `reversed_amount`, so
+          // this returns the paid amount to the customer's account (he now owes
+          // the full invoice again). The accounting journal for the payment is
+          // re-created unchanged by trg_cp_sync_accounting_upd, so the treasury
+          // is untouched here — its drop is handled by setting paid_amount to 0.
+          const nextReversed = Math.min(
+            Math.abs(Number(p.amount || 0)),
+            Math.abs(Number(p.reversed_amount || 0)) + portion,
+          );
           return (supabase.from("contact_payments") as any)
-            .update({ allocated_amount: nextAllocated })
+            .update({ allocated_amount: nextAllocated, reversed_amount: nextReversed })
             .eq("id", p.id);
         }));
       }
